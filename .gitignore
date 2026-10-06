@@ -32,3 +32,5 @@ Thumbs.db
 
 # Experiment outputs (regenerate with backend/experiments/exp_*.py)
 backend/experiments/results/
+backend/models/*.npz
+backend/experiments/catboost_info/
