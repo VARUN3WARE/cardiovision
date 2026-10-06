@@ -9,6 +9,9 @@ export default defineConfig({
       "/predict": "http://localhost:8000",
       "/explain": "http://localhost:8000",
       "/health": "http://localhost:8000",
+      "/features": "http://localhost:8000",
+      "/docs": "http://localhost:8000",
+      "/openapi.json": "http://localhost:8000",
     },
   },
 });

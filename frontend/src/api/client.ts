@@ -19,7 +19,8 @@ export interface ShapExplanation {
 }
 
 export interface ExplainResponse extends PredictionResponse {
-  explanation: ShapExplanation;
+  explanation: ShapExplanation; // overall CAD model
+  explanations: Record<"cad" | "lad" | "lcx" | "rca", ShapExplanation>;
 }
 
 export async function predict(features: Record<string, unknown>): Promise<PredictionResponse> {

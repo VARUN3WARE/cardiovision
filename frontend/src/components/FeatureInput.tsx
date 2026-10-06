@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PRESETS from "../presets.json";
 
 // Field names match the backend PatientFeatures schema exactly.
 // Categorical fields use raw dataset values (Sex: "Male"|"Fmale", Y/N, etc.).
@@ -32,36 +33,84 @@ const EXAMPLE: FeatureValues = {
   QWave: 0, StElevation: 1, StDepression: 1, Tinversion: 1,
   LVH: "N", PoorRProgression: "N", BBB: "N",
   FBS: 120, CR: 1.1, TG: 180, LDL: 150, HDL: 38, BUN: 16, ESR: 12,
-  HB: 13.5, K: 4.2, Na: 140, WBC: 7500, Lymph: 30, Neut: 65, PLT: 250000,
+  HB: 13.5, K: 4.2, Na: 140, WBC: 7500, Lymph: 30, Neut: 65, PLT: 250,
   EF_TTE: 50, RegionRWMA: 1, VHD: "N",
 };
 
+export interface Preset {
+  id: string;
+  label: string;
+  description: string;
+  patient_index: number;
+  ground_truth: { cad: boolean; lad: boolean; lcx: boolean; rca: boolean };
+  oof_probabilities: Record<string, number>;
+  features: FeatureValues;
+}
+
+// Real patients from the dataset, chosen by out-of-fold predictions (backend/make_presets.py).
+export const presets = PRESETS as Preset[];
+
 interface Props {
-  onSubmit: (features: Record<string, unknown>) => void;
+  onSubmit: (features: Record<string, unknown>, preset: Preset | null) => void;
   loading: boolean;
 }
 
 export default function FeatureInput({ onSubmit, loading }: Props) {
   const [v, setV] = useState<FeatureValues>(EXAMPLE);
-  const setNum = (k: keyof FeatureValues, val: string) =>
+  // The loaded preset, cleared as soon as any field is edited.
+  const [preset, setPreset] = useState<Preset | null>(null);
+  const setNum = (k: keyof FeatureValues, val: string) => {
+    setPreset(null);
     setV((s) => ({ ...s, [k]: Number(val) }));
-  const setStr = (k: keyof FeatureValues, val: string) =>
+  };
+  const setStr = (k: keyof FeatureValues, val: string) => {
+    setPreset(null);
     setV((s) => ({ ...s, [k]: val }));
+  };
+  const loadPreset = (p: Preset) => {
+    setV(p.features);
+    setPreset(p);
+    onSubmit(p.features as unknown as Record<string, unknown>, p);
+  };
 
   return (
     <form
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(v as unknown as Record<string, unknown>);
+        onSubmit(v as unknown as Record<string, unknown>, preset);
       }}
     >
+      <div>
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-300">
+          Example patients (from dataset)
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {presets.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              disabled={loading}
+              onClick={() => loadPreset(p)}
+              title={`Dataset patient #${p.patient_index}: ${p.description}`}
+              className={`rounded border px-2 py-1 text-left text-xs transition disabled:opacity-50 ${
+                preset?.id === p.id
+                  ? "border-red-400 bg-red-900/40 text-white"
+                  : "border-slate-600 bg-slate-900 text-gray-300 hover:border-slate-400"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <Section title="Demographic">
         <Num label="Age" value={v.Age} onChange={(x) => setNum("Age", x)} />
         <Num label="Weight (kg)" value={v.Weight} onChange={(x) => setNum("Weight", x)} />
         <Num label="Height (cm)" value={v.Length} onChange={(x) => setNum("Length", x)} />
         <Sel label="Sex" value={v.Sex} onChange={(x) => setStr("Sex", x)}
-          opts={[["Male", "Male"], ["Fmale", "Fmale"]]} />
+          opts={[["Male", "Male"], ["Fmale", "Female"]]} />
         <Num label="BMI" value={v.BMI} onChange={(x) => setNum("BMI", x)} />
       </Section>
 
@@ -90,7 +139,8 @@ export default function FeatureInput({ onSubmit, loading }: Props) {
         <YN label="Diastolic Murmur" value={v.DiastolicMurmur} onChange={(x) => setStr("DiastolicMurmur", x)} />
         <Bin label="Typical Chest Pain" value={v.TypicalChestPain} onChange={(x) => setNum("TypicalChestPain", x)} />
         <YN label="Dyspnea" value={v.Dyspnea} onChange={(x) => setStr("Dyspnea", x)} />
-        <Num label="Function Class" value={v.FunctionClass} onChange={(x) => setNum("FunctionClass", x)} />
+        <Sel label="NYHA Class" value={String(v.FunctionClass)} onChange={(x) => setNum("FunctionClass", x)}
+          opts={[["0", "0"], ["1", "I"], ["2", "II"], ["3", "III"], ["4", "IV"]]} />
         <YN label="Atypical" value={v.Atypical} onChange={(x) => setStr("Atypical", x)} />
         <YN label="Nonanginal" value={v.Nonanginal} onChange={(x) => setStr("Nonanginal", x)} />
         <YN label="Exertional CP" value={v.ExertionalCP} onChange={(x) => setStr("ExertionalCP", x)} />
@@ -122,12 +172,13 @@ export default function FeatureInput({ onSubmit, loading }: Props) {
         <Num label="WBC" value={v.WBC} onChange={(x) => setNum("WBC", x)} />
         <Num label="Lymph %" value={v.Lymph} onChange={(x) => setNum("Lymph", x)} />
         <Num label="Neut %" value={v.Neut} onChange={(x) => setNum("Neut", x)} />
-        <Num label="Platelets" value={v.PLT} onChange={(x) => setNum("PLT", x)} />
+        <Num label="Platelets (×10³/µL)" value={v.PLT} onChange={(x) => setNum("PLT", x)} />
       </Section>
 
       <Section title="Echocardiogram">
         <Num label="Ejection Fraction" value={v.EF_TTE} onChange={(x) => setNum("EF_TTE", x)} />
-        <Bin label="Region RWMA" value={v.RegionRWMA} onChange={(x) => setNum("RegionRWMA", x)} />
+        <Sel label="Wall motion abn. (RWMA)" value={String(v.RegionRWMA)} onChange={(x) => setNum("RegionRWMA", x)}
+          opts={[["0", "None"], ["1", "Region 1"], ["2", "Region 2"], ["3", "Region 3"], ["4", "Region 4"]]} />
         <Sel label="Valvular HD" value={v.VHD} onChange={(x) => setStr("VHD", x)}
           opts={[["N", "None"], ["mild", "Mild"], ["Moderate", "Moderate"], ["Severe", "Severe"]]} />
       </Section>
