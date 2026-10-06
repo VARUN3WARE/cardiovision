@@ -29,3 +29,6 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Experiment outputs (regenerate with backend/experiments/exp_*.py)
+backend/experiments/results/
