@@ -458,9 +458,11 @@ function GreatVessels() {
           name,
           // Open-ended: the cut ends show the vessel lumen, as on a dissected specimen.
           geometry: taperedTube(curve, (t) => def.radius * profile(t), 96, 32),
-          color: name === "aorta" || name.startsWith("left") || name === "brachiocephalic"
-            ? "#c0685c"
-            : def.deoxygenated ? "#5a6aa0" : "#a8564c",
+          // Natural tissue tones (as on a specimen), not textbook red/blue: arterial walls
+          // are pinkish-red, the thin-walled veins a darker maroon.
+          color: name === "pulmonary" || name.endsWith("PA")
+            ? "#c86a5e"
+            : def.deoxygenated || name.endsWith("pv") ? "#7e3438" : "#cf7465",
         };
       }),
     [],
