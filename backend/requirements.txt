@@ -4,7 +4,9 @@ uvicorn[standard]==0.54.0
 pydantic==2.13.5
 scikit-learn==1.7.2
 xgboost==3.2.0
+lightgbm==4.7.0
 pandas==2.3.3
 numpy==2.2.6
 scipy==1.15.3
 joblib==1.6.0
+openpyxl==3.1.5  # extracts the committed UCI xlsx on a fresh clone

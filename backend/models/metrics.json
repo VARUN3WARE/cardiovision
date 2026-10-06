@@ -1,42 +1,402 @@
 {
   "cad": {
+    "model": "Blend (log-odds) of L2 logistic regression on 8 clinical composites and LightGBM depth-1 trees",
     "n": 303,
     "positive": 216,
     "negative": 87,
-    "accuracy": 0.8712871287128713,
-    "precision": 0.9004524886877828,
-    "recall": 0.9212962962962963,
-    "f1": 0.9107551487414187,
-    "roc_auc": 0.9062899106002554
+    "prevalence": 0.7128712871287128,
+    "validation": "5-fold stratified cross-validation x 5 repeats",
+    "cv": {
+      "roc_auc": {
+        "mean": 0.9433056619838229,
+        "std": 0.005116709827310857
+      },
+      "pr_auc": {
+        "mean": 0.9755905212033049,
+        "std": 0.002439550564656101
+      },
+      "brier": {
+        "mean": 0.08305283297811757,
+        "std": 0.0036468917570053167
+      },
+      "log_loss": {
+        "mean": 0.2740574972195057,
+        "std": 0.010898781359209957
+      },
+      "accuracy": {
+        "mean": 0.8831683168316833,
+        "std": 0.007975607903362747
+      },
+      "precision": {
+        "mean": 0.9101168765119038,
+        "std": 0.006756682048801965
+      },
+      "recall": {
+        "mean": 0.9277777777777778,
+        "std": 0.006928995160692476
+      },
+      "specificity": {
+        "mean": 0.7724137931034483,
+        "std": 0.018390804597701177
+      },
+      "f1": {
+        "mean": 0.9188446290684334,
+        "std": 0.005518674168402055
+      }
+    },
+    "accuracy": 0.8831683168316833,
+    "precision": 0.9101168765119038,
+    "recall": 0.9277777777777778,
+    "f1": 0.9188446290684334,
+    "roc_auc": 0.9433056619838229,
+    "operating_points": {
+      "f1_threshold": {
+        "accuracy": 0.8778877887788779,
+        "precision": 0.9049773755656109,
+        "recall": 0.9259259259259259,
+        "specificity": 0.7586206896551724,
+        "f1": 0.9153318077803204
+      },
+      "rule_out_threshold": {
+        "accuracy": 0.8778877887788779,
+        "precision": 0.8744769874476988,
+        "recall": 0.9675925925925926,
+        "specificity": 0.6551724137931034,
+        "f1": 0.9186813186813186,
+        "npv": 0.890625
+      }
+    },
+    "thresholds": {
+      "f1": 0.43999999999999995,
+      "rule_out": 0.41999999999999993,
+      "balanced": 0.58
+    },
+    "bands": [
+      {
+        "label": "Lower",
+        "lo": 0.0,
+        "hi": 0.41999999999999993,
+        "share_of_patients": 0.2429,
+        "observed_rate": 0.1495,
+        "mean_predicted": 0.1956
+      },
+      {
+        "label": "Intermediate",
+        "lo": 0.41999999999999993,
+        "hi": 0.58,
+        "share_of_patients": 0.0614,
+        "observed_rate": 0.4839,
+        "mean_predicted": 0.5022
+      },
+      {
+        "label": "Higher",
+        "lo": 0.58,
+        "hi": 1.0,
+        "share_of_patients": 0.6957,
+        "observed_rate": 0.9298,
+        "mean_predicted": 0.9148
+      }
+    ],
+    "train_seconds": 11.6
   },
   "lad": {
+    "model": "Platt-recalibrated blend of calibrated logistic regression (clinical composites) and XGBoost on engineered features",
     "n": 303,
     "positive": 177,
     "negative": 126,
-    "accuracy": 0.7953795379537953,
-    "precision": 0.8108108108108109,
-    "recall": 0.847457627118644,
-    "f1": 0.8287292817679558,
-    "roc_auc": 0.846426329477177
+    "prevalence": 0.5841584158415841,
+    "validation": "5-fold stratified cross-validation x 5 repeats",
+    "cv": {
+      "roc_auc": {
+        "mean": 0.8563626580575733,
+        "std": 0.01056507219248887
+      },
+      "pr_auc": {
+        "mean": 0.8829613402826787,
+        "std": 0.008696141849033468
+      },
+      "brier": {
+        "mean": 0.14798347334085946,
+        "std": 0.005361362082489335
+      },
+      "log_loss": {
+        "mean": 0.4616099444242886,
+        "std": 0.016734565760200874
+      },
+      "accuracy": {
+        "mean": 0.7986798679867986,
+        "std": 0.007525910396693993
+      },
+      "precision": {
+        "mean": 0.7966218063004177,
+        "std": 0.008499317911725899
+      },
+      "recall": {
+        "mean": 0.8802259887005649,
+        "std": 0.009039548022598884
+      },
+      "specificity": {
+        "mean": 0.6841269841269841,
+        "std": 0.01694774325719256
+      },
+      "f1": {
+        "mean": 0.8362895019563801,
+        "std": 0.005865638414542063
+      }
+    },
+    "accuracy": 0.7986798679867986,
+    "precision": 0.7966218063004177,
+    "recall": 0.8802259887005649,
+    "f1": 0.8362895019563801,
+    "roc_auc": 0.8563626580575733,
+    "operating_points": {
+      "f1_threshold": {
+        "accuracy": 0.7953795379537953,
+        "precision": 0.7777777777777778,
+        "recall": 0.9096045197740112,
+        "specificity": 0.6349206349206349,
+        "f1": 0.8385416666666666
+      },
+      "rule_out_threshold": {
+        "accuracy": 0.7821782178217822,
+        "precision": 0.7444933920704846,
+        "recall": 0.9548022598870056,
+        "specificity": 0.5396825396825397,
+        "f1": 0.8366336633663366,
+        "npv": 0.8947368421052632
+      }
+    },
+    "thresholds": {
+      "f1": 0.36999999999999994,
+      "rule_out": 0.14999999999999997,
+      "balanced": 0.4799999999999999
+    },
+    "bands": [
+      {
+        "label": "Lower",
+        "lo": 0.0,
+        "hi": 0.3333333333333333,
+        "share_of_patients": 0.264,
+        "observed_rate": 0.1325,
+        "mean_predicted": 0.162
+      },
+      {
+        "label": "Intermediate",
+        "lo": 0.3333333333333333,
+        "hi": 0.6666666666666666,
+        "share_of_patients": 0.2191,
+        "observed_rate": 0.5241,
+        "mean_predicted": 0.5169
+      },
+      {
+        "label": "Higher",
+        "lo": 0.6666666666666666,
+        "hi": 1.0,
+        "share_of_patients": 0.5168,
+        "observed_rate": 0.8404,
+        "mean_predicted": 0.8436
+      }
+    ],
+    "train_seconds": 253.9
   },
   "lcx": {
+    "model": "Platt-recalibrated blend of calibrated logistic regression (clinical composites) and XGBoost on engineered features",
     "n": 303,
     "positive": 119,
     "negative": 184,
-    "accuracy": 0.7095709570957096,
-    "precision": 0.6396396396396397,
-    "recall": 0.5966386554621849,
-    "f1": 0.6173913043478261,
-    "roc_auc": 0.7444282060650347
+    "prevalence": 0.3927392739273927,
+    "validation": "5-fold stratified cross-validation x 5 repeats",
+    "cv": {
+      "roc_auc": {
+        "mean": 0.7611983924004384,
+        "std": 0.012809249068625843
+      },
+      "pr_auc": {
+        "mean": 0.6254886087064658,
+        "std": 0.01971919812342021
+      },
+      "brier": {
+        "mean": 0.1957449121296983,
+        "std": 0.005407001471080052
+      },
+      "log_loss": {
+        "mean": 0.5773479281881679,
+        "std": 0.014667260156409066
+      },
+      "accuracy": {
+        "mean": 0.6996699669966997,
+        "std": 0.017588003425048473
+      },
+      "precision": {
+        "mean": 0.6564232209737828,
+        "std": 0.0348031527633994
+      },
+      "recall": {
+        "mean": 0.49747899159663866,
+        "std": 0.014457689524441396
+      },
+      "specificity": {
+        "mean": 0.8304347826086957,
+        "std": 0.026041627284154205
+      },
+      "f1": {
+        "mean": 0.5656422100553489,
+        "std": 0.018775327889941233
+      }
+    },
+    "accuracy": 0.6996699669966997,
+    "precision": 0.6564232209737828,
+    "recall": 0.49747899159663866,
+    "f1": 0.5656422100553489,
+    "roc_auc": 0.7611983924004384,
+    "operating_points": {
+      "f1_threshold": {
+        "accuracy": 0.6600660066006601,
+        "precision": 0.5434782608695652,
+        "recall": 0.8403361344537815,
+        "specificity": 0.5434782608695652,
+        "f1": 0.6600660066006601
+      },
+      "rule_out_threshold": {
+        "accuracy": 0.5016501650165016,
+        "precision": 0.43846153846153846,
+        "recall": 0.957983193277311,
+        "specificity": 0.20652173913043478,
+        "f1": 0.6015831134564644,
+        "npv": 0.8837209302325582
+      }
+    },
+    "thresholds": {
+      "f1": 0.38999999999999996,
+      "rule_out": 0.13,
+      "balanced": 0.43999999999999995
+    },
+    "bands": [
+      {
+        "label": "Lower",
+        "lo": 0.0,
+        "hi": 0.3333333333333333,
+        "share_of_patients": 0.4172,
+        "observed_rate": 0.1677,
+        "mean_predicted": 0.1953
+      },
+      {
+        "label": "Intermediate",
+        "lo": 0.3333333333333333,
+        "hi": 0.6666666666666666,
+        "share_of_patients": 0.4719,
+        "observed_rate": 0.5217,
+        "mean_predicted": 0.4782
+      },
+      {
+        "label": "Higher",
+        "lo": 0.6666666666666666,
+        "hi": 1.0,
+        "share_of_patients": 0.1109,
+        "observed_rate": 0.6905,
+        "mean_predicted": 0.7716
+      }
+    ],
+    "train_seconds": 269.3
   },
   "rca": {
+    "model": "Blend (log-odds) of L1 logistic regression on engineered features and LightGBM depth-2 trees",
     "n": 303,
     "positive": 114,
     "negative": 189,
-    "accuracy": 0.6567656765676567,
-    "precision": 0.5510204081632653,
-    "recall": 0.47368421052631576,
-    "f1": 0.5094339622641509,
-    "roc_auc": 0.6775735635384758
+    "prevalence": 0.37623762376237624,
+    "validation": "5-fold stratified cross-validation x 5 repeats",
+    "cv": {
+      "roc_auc": {
+        "mean": 0.7388749651907547,
+        "std": 0.00628138337813221
+      },
+      "pr_auc": {
+        "mean": 0.5936016566178999,
+        "std": 0.017920516757506767
+      },
+      "brier": {
+        "mean": 0.1986443089768219,
+        "std": 0.0022969843464329823
+      },
+      "log_loss": {
+        "mean": 0.5793550366360849,
+        "std": 0.004536895324142157
+      },
+      "accuracy": {
+        "mean": 0.6818481848184818,
+        "std": 0.003960396039603957
+      },
+      "precision": {
+        "mean": 0.5963066895651166,
+        "std": 0.006230035049302335
+      },
+      "recall": {
+        "mean": 0.4789473684210527,
+        "std": 0.034018806016956706
+      },
+      "specificity": {
+        "mean": 0.8042328042328043,
+        "std": 0.01673162783157874
+      },
+      "f1": {
+        "mean": 0.5304946635214295,
+        "std": 0.019274904138612447
+      }
+    },
+    "accuracy": 0.6818481848184818,
+    "precision": 0.5963066895651166,
+    "recall": 0.4789473684210527,
+    "f1": 0.5304946635214295,
+    "roc_auc": 0.7388749651907547,
+    "operating_points": {
+      "f1_threshold": {
+        "accuracy": 0.6204620462046204,
+        "precision": 0.4972677595628415,
+        "recall": 0.7982456140350878,
+        "specificity": 0.5132275132275133,
+        "f1": 0.6127946127946128
+      },
+      "rule_out_threshold": {
+        "accuracy": 0.5808580858085809,
+        "precision": 0.4713656387665198,
+        "recall": 0.9385964912280702,
+        "specificity": 0.36507936507936506,
+        "f1": 0.6275659824046921,
+        "npv": 0.9078947368421053
+      }
+    },
+    "thresholds": {
+      "f1": 0.30999999999999994,
+      "rule_out": 0.20999999999999996,
+      "balanced": 0.30999999999999994
+    },
+    "bands": [
+      {
+        "label": "Lower",
+        "lo": 0.0,
+        "hi": 0.3333333333333333,
+        "share_of_patients": 0.4502,
+        "observed_rate": 0.1994,
+        "mean_predicted": 0.1937
+      },
+      {
+        "label": "Intermediate",
+        "lo": 0.3333333333333333,
+        "hi": 0.6666666666666666,
+        "share_of_patients": 0.4383,
+        "observed_rate": 0.4729,
+        "mean_predicted": 0.4891
+      },
+      {
+        "label": "Higher",
+        "lo": 0.6666666666666666,
+        "hi": 1.0,
+        "share_of_patients": 0.1116,
+        "observed_rate": 0.7101,
+        "mean_predicted": 0.7552
+      }
+    ],
+    "train_seconds": 23.6
   }
 }

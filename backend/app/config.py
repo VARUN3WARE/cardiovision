@@ -7,6 +7,7 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 FEATURES_PATH = MODELS_DIR / "features.json"
 ENCODING_PATH = MODELS_DIR / "encoding.json"
 METRICS_PATH = MODELS_DIR / "metrics.json"
+FEATURE_INFO_PATH = MODELS_DIR / "feature_info.json"
 
 # Columns that must NEVER be used as model inputs (target leakage).
 LEAKAGE_COLUMNS = ["LAD", "LCX", "RCA", "Cath"]

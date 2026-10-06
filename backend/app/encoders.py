@@ -38,13 +38,13 @@ def encode_value(col: str, value: Any, encoding: dict[str, dict[str, float]]) ->
     if col in encoding:
         key = str(value)
         if key not in encoding[col]:
-            return 0.0  # unknown category -> baseline
+            # Code 0 is a real category (e.g. Sex=Fmale, BBB=LBBB), so never fall back silently.
+            raise ValueError(f"unknown category {value!r} for {col!r}; expected one of {list(encoding[col])}")
         return encoding[col][key]
-    try:
-        v = float(value)
-        return v if v == v else 0.0
-    except (TypeError, ValueError):
-        return 0.0
+    v = float(value)
+    if v != v:
+        raise ValueError(f"missing value for {col!r}")
+    return v
 
 
 def encode_dataframe(df: pd.DataFrame, encoding: dict[str, dict[str, float]],
@@ -60,7 +60,10 @@ def encode_dataframe(df: pd.DataFrame, encoding: dict[str, dict[str, float]],
 
 def encode_dict(features: dict[str, Any], encoding: dict[str, dict[str, float]],
                 feature_names: list[str]) -> list[float]:
-    return [encode_value(col, features.get(col, 0), encoding) for col in feature_names]
+    missing = [col for col in feature_names if col not in features]
+    if missing:
+        raise ValueError(f"missing input columns: {missing}")
+    return [encode_value(col, features[col], encoding) for col in feature_names]
 
 
 def binarize_target(series: pd.Series, positive_label: str) -> pd.Series:

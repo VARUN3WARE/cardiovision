@@ -1,7 +1,8 @@
 """Pick real dataset patients as demo presets for the frontend.
 
-Selection uses OUT-OF-FOLD probabilities (each patient scored by a model that
-never saw them), so presets are not cherry-picked from in-sample fits.
+Uses the OUT-OF-FOLD probabilities that train.py saved (each patient scored by production-model
+fits that never saw them, averaged over the 5 CV repeats), so presets are not cherry-picked
+from in-sample fits and the UI can show honest "held-out" estimates next to the live score.
 Writes ../frontend/src/presets.json. Run after train.py.
 """
 from __future__ import annotations
@@ -11,84 +12,79 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
-from xgboost import XGBClassifier
 
-from app.config import TARGETS, TARGET_COLUMN_MAP, TARGET_POSITIVE
-from app.encoders import binarize_target, encode_dataframe, load_encoding
-from app.model import load_features
-from app.schemas import SCHEMA_TO_COLUMN, PatientFeatures
+from app.config import MODELS_DIR, TARGETS
+from app.schemas import COLUMN_TO_SCHEMA, FIXED_COLUMNS, PatientFeatures
 from train import load_dataset
 
 OUT_PATH = Path(__file__).resolve().parent.parent / "frontend" / "src" / "presets.json"
 
 
-def oof_probabilities(df: pd.DataFrame, X: pd.DataFrame) -> pd.DataFrame:
-    out = {}
-    for target in TARGETS:
-        col = TARGET_COLUMN_MAP[target]
-        y = binarize_target(df[col], TARGET_POSITIVE[col])
-        pos = int(y.sum())
-        model = XGBClassifier(
-            n_estimators=400, max_depth=4, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            scale_pos_weight=(len(y) - pos) / pos, eval_metric="logloss",
-            random_state=42, n_jobs=4,
-        )
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        out[target] = cross_val_predict(model, X, y, cv=cv, method="predict_proba")[:, 1]
-    return pd.DataFrame(out, index=df.index)
-
-
 def to_schema(row: pd.Series) -> dict:
     values = {}
-    for name in PatientFeatures.model_fields:
-        v = row[SCHEMA_TO_COLUMN.get(name, name)]
+    for col, v in row.items():
+        name = COLUMN_TO_SCHEMA.get(col, col)
+        if name not in PatientFeatures.model_fields or col in FIXED_COLUMNS:
+            continue
         values[name] = v.item() if hasattr(v, "item") else v
-    if isinstance(values["BMI"], float):
-        values["BMI"] = round(values["BMI"], 1)
-    PatientFeatures(**values)  # validate
+    values["BMI"] = round(values["BMI"], 1)
+    PatientFeatures(**values)  # validate against the API schema
     return values
 
 
 def main():
     df = load_dataset()
-    X = encode_dataframe(df, load_encoding(), load_features())
-    P = oof_probabilities(df, X)
+    oof = np.load(MODELS_DIR / "oof_predictions.npz")
+    P = pd.DataFrame({t: oof[t].mean(axis=0) for t in TARGETS}, index=df.index)
     sten = {v: df[v.upper()] == "Stenotic" for v in ("lad", "lcx", "rca")}
     normal = (df["Cath"] == "Normal") & ~sten["lad"] & ~sten["lcx"] & ~sten["rca"]
 
     vessels = P[["lad", "lcx", "rca"]]
     candidates = [
         ("low", "Low risk", "Normal angiogram, no stenosis",
-         normal, -P[["cad", "lad", "lcx", "rca"]].max(axis=1)),
+         normal, -P.max(axis=1)),
         ("lad", "Single-vessel (LAD)", "Isolated LAD stenosis",
          sten["lad"] & ~sten["lcx"] & ~sten["rca"], P["lad"] - P[["lcx", "rca"]].max(axis=1)),
         ("rca", "Single-vessel (RCA)", "Isolated RCA stenosis",
          ~sten["lad"] & ~sten["lcx"] & sten["rca"], P["rca"] - P[["lad", "lcx"]].max(axis=1)),
         ("triple", "Three-vessel disease", "LAD + LCX + RCA stenosis",
          sten["lad"] & sten["lcx"] & sten["rca"], vessels.min(axis=1)),
+        # An honest borderline case: CAD present but the vessel models are unsure.
+        ("uncertain", "Uncertain case", "CAD with a borderline vessel picture",
+         df["Cath"] == "CAD", -(vessels - 0.5).abs().mean(axis=1)),
     ]
+
+    # Labelled examples should be cases the held-out models call correctly, at each model's own
+    # learned decision threshold, for the targets the label is about; the "uncertain" preset
+    # exists to show the opposite. (No isolated-RCA patient is called correctly on all four
+    # targets: the vessel models also over-call LAD, which the UI shows as a false alarm.)
+    metrics = json.loads((MODELS_DIR / "metrics.json").read_text())
+    thresholds = {t: metrics[t]["thresholds"]["f1"] for t in TARGETS}
+    truth_df = pd.DataFrame({"cad": df["Cath"] == "CAD", **sten})
+    correct_on = {t: (P[t] >= thresholds[t]) == truth_df[t] for t in TARGETS}
+    about = {"low": TARGETS, "lad": ["cad", "lad"], "rca": ["cad", "rca"], "triple": TARGETS}
 
     presets = []
     for key, label, truth, mask, score in candidates:
+        if key in about:
+            ok = pd.concat([correct_on[t] for t in about[key]], axis=1).all(axis=1)
+            if (mask & ok).any():
+                mask = mask & ok
         idx = score[mask].idxmax()
         row = df.loc[idx]
+        gt = {"cad": bool(row["Cath"] == "CAD"), **{v: bool(sten[v][idx]) for v in ("lad", "lcx", "rca")}}
+        if key == "uncertain":
+            truth = "CAD; stenosis in " + (", ".join(v.upper() for v in ("lad", "lcx", "rca") if gt[v]) or "no major vessel")
         presets.append({
             "id": key,
             "label": label,
             "description": truth,
             "patient_index": int(idx),
-            "ground_truth": {
-                "cad": row["Cath"] == "CAD",
-                "lad": bool(sten["lad"][idx]),
-                "lcx": bool(sten["lcx"][idx]),
-                "rca": bool(sten["rca"][idx]),
-            },
-            "oof_probabilities": {k: round(float(P.loc[idx, k]), 3) for k in P.columns},
-            "features": to_schema(row),
+            "ground_truth": gt,
+            "oof_probabilities": {t: round(float(P.loc[idx, t]), 3) for t in TARGETS},
+            "features": to_schema(row.drop(labels=["Cath", "LAD", "LCX", "RCA"])),
         })
-        print(f"{label:22} row={idx:3}  oof={presets[-1]['oof_probabilities']}")
+        print(f"{label:22} row={idx:3}  held-out={presets[-1]['oof_probabilities']}  truth={gt}")
 
     with open(OUT_PATH, "w") as f:
         json.dump(presets, f, indent=2)

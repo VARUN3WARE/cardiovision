@@ -5,9 +5,9 @@ import json
 from typing import Any
 
 import joblib
-import numpy as np
+import pandas as pd
 
-from app.config import FEATURES_PATH, TARGETS
+from app.config import FEATURE_INFO_PATH, FEATURES_PATH, METRICS_PATH, MODELS_DIR, TARGETS
 from app.encoders import encode_dict, load_encoding
 
 
@@ -16,8 +16,17 @@ def load_features() -> list[str]:
         return json.load(f)
 
 
+def load_metrics() -> dict:
+    with open(METRICS_PATH) as f:
+        return json.load(f)
+
+
+def load_feature_info() -> dict:
+    with open(FEATURE_INFO_PATH) as f:
+        return json.load(f)
+
+
 def load_models() -> dict[str, Any]:
-    from app.config import MODELS_DIR
     models = {}
     for target in TARGETS:
         path = MODELS_DIR / f"{target}.joblib"
@@ -29,16 +38,32 @@ def load_models() -> dict[str, Any]:
     return models
 
 
-def predict_all(models: dict[str, Any], feature_names: list[str],
-                encoding: dict, features: dict[str, Any]) -> dict:
-    vec = encode_dict(features, encoding, feature_names)
-    x = np.array([vec], dtype=float)
+def to_frame(features: dict[str, Any], encoding: dict, feature_names: list[str]) -> pd.DataFrame:
+    """One encoded row as a DataFrame (the models read columns by name)."""
+    return pd.DataFrame([encode_dict(features, encoding, feature_names)], columns=feature_names, dtype=float)
+
+
+def band_for(p: float, bands: list[dict]) -> dict:
+    for b in bands:
+        if b["lo"] <= p < b["hi"] or (b["hi"] >= 1 and p >= b["lo"]):
+            return b
+    return bands[-1]
+
+
+def predict_all(models: dict[str, Any], X: pd.DataFrame, metrics: dict) -> dict:
     result = {}
     for target in TARGETS:
         model = models[target]
-        proba = float(model.predict_proba(x)[0, 1])
-        pred = int(proba >= 0.5)
-        result[target] = {"probability": proba, "prediction": pred}
+        p = float(model.predict_proba(X)[0, 1])
+        threshold = float(getattr(model, "threshold_", 0.5))
+        band = band_for(p, metrics[target]["bands"])
+        result[target] = {
+            "probability": p,
+            "prediction": int(p >= threshold),
+            "threshold": threshold,
+            "band": band["label"],
+            "band_observed_rate": band.get("observed_rate"),
+        }
     return result
 
 
