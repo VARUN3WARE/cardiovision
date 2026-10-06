@@ -4,6 +4,7 @@ import { Bloom, EffectComposer, N8AO, ToneMapping, Vignette } from "@react-three
 import { ToneMappingMode } from "postprocessing";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
+import AnatomyPins from "./AnatomyPins";
 import {
   ARTERIES, ATRIA, FAT_DARK, FAT_LIGHT, GREAT_VESSELS, MUSCLE_DARK, MUSCLE_LIGHT, NEUTRAL_ARTERY,
   VEINS, VEIN_COLOR, buildChamber, buildMyocardium, makeMuscleNormalMap, makeTissueNormalMap,
@@ -73,6 +74,7 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [fx, setFx] = useState(true);
+  const [pins, setPins] = useState(false);
   const [hovered, setHovered] = useState<Vessel | null>(null);
   const [resetKey, setResetKey] = useState(0);
   const [ready, setReady] = useState(false);
@@ -102,6 +104,7 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
             selected={selected}
             hovered={hovered}
             mode={mode}
+            pins={pins}
             bpm={beating ? bpm : 0}
             onSelect={onSelect}
             onHover={setHovered}
@@ -142,6 +145,13 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
             {m === "arteries" ? "Arteries" : "Territories"}
           </button>
         ))}
+        <button
+          onClick={() => setPins((p) => !p)}
+          className={`rounded px-2 py-1 ${pins ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+          title="Show numbered anatomy annotations"
+        >
+          Anatomy
+        </button>
         <button
           onClick={() => setBeating((b) => !b)}
           className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
@@ -270,12 +280,13 @@ interface HeartProps {
   selected: Vessel | null;
   hovered: Vessel | null;
   mode: ViewMode;
+  pins: boolean;
   bpm: number;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
 }
 
-function Heart({ probs, selected, hovered, mode, bpm, onSelect, onHover }: HeartProps) {
+function Heart({ probs, selected, hovered, mode, pins, bpm, onSelect, onHover }: HeartProps) {
   const ventricles = useRef<THREE.Group>(null);
   const atria = useRef<THREE.Group>(null);
   const outflow = useRef<THREE.Group>(null);
@@ -296,6 +307,7 @@ function Heart({ probs, selected, hovered, mode, bpm, onSelect, onHover }: Heart
 
   return (
     <group rotation={HEART_ROTATION} position={[0.1, -0.2, 0]}>
+      {pins && <AnatomyPins occluders={[myocardium, outflow, atria]} />}
       {/* Opaque anatomy swallows pointer events so arteries behind it can't be picked through it. */}
       <group ref={outflow} onPointerMove={stop} onClick={stop}>
         <GreatVessels />
