@@ -23,11 +23,11 @@ class PatientFeatures(BaseModel):
     Sex: Literal["Male", "Fmale"]
     BMI: float = Field(..., ge=10, le=60)
     # History / risk factors
-    DM: int = Field(0, description="Diabetes mellitus 0/1")
-    HTN: int = Field(0, description="Hypertension 0/1")
-    CurrentSmoker: int = Field(0, description="Rename from 'Current Smoker'")
-    EX_Smoker: int = Field(0)
-    FH: int = Field(0, description="Family history 0/1")
+    DM: int = Field(0, ge=0, le=1, description="Diabetes mellitus 0/1")
+    HTN: int = Field(0, ge=0, le=1, description="Hypertension 0/1")
+    CurrentSmoker: int = Field(0, ge=0, le=1, description="Rename from 'Current Smoker'")
+    EX_Smoker: int = Field(0, ge=0, le=1)
+    FH: int = Field(0, ge=0, le=1, description="Family history 0/1")
     Obesity: Literal["Y", "N"] = "N"
     CRF: Literal["Y", "N"] = "N"
     CVA: Literal["Y", "N"] = "N"
@@ -38,30 +38,30 @@ class PatientFeatures(BaseModel):
     # Examination
     BP: int = Field(..., ge=60, le=250, description="Blood pressure (mmHg)")
     PR: int = Field(..., ge=30, le=220, description="Pulse rate (bpm)")
-    Edema: int = Field(0)
+    Edema: int = Field(0, ge=0, le=1)
     WeakPeripheralPulse: Literal["Y", "N"] = "N"
     LungRales: Literal["Y", "N"] = "N"
     SystolicMurmur: Literal["Y", "N"] = "N"
     DiastolicMurmur: Literal["Y", "N"] = "N"
-    TypicalChestPain: int = Field(0)
+    TypicalChestPain: int = Field(0, ge=0, le=1)
     Dyspnea: Literal["Y", "N"] = "N"
-    FunctionClass: int = Field(0, description="NYHA function class")
+    FunctionClass: int = Field(0, ge=0, le=4, description="NYHA function class")
     Atypical: Literal["Y", "N"] = "N"
     Nonanginal: Literal["Y", "N"] = "N"
     ExertionalCP: Literal["Y", "N"] = "N"
     LowTHAng: Literal["Y", "N"] = "N"
     # ECG
-    QWave: int = Field(0)
-    StElevation: int = Field(0)
-    StDepression: int = Field(0)
-    Tinversion: int = Field(0)
+    QWave: int = Field(0, ge=0, le=1)
+    StElevation: int = Field(0, ge=0, le=1)
+    StDepression: int = Field(0, ge=0, le=1)
+    Tinversion: int = Field(0, ge=0, le=1)
     LVH: Literal["Y", "N"] = "N"
     PoorRProgression: Literal["Y", "N"] = "N"
     BBB: Literal["N", "LBBB", "RBBB"] = "N"
     # Laboratory
     FBS: int = Field(..., ge=40, le=500, description="Fasting blood sugar")
     CR: float = Field(..., ge=0.1, le=20, description="Creatinine")
-    TG: int = Field(..., ge=20, le=1000, description="Triglycerides")
+    TG: int = Field(..., ge=20, le=2000, description="Triglycerides")
     LDL: int = Field(..., ge=10, le=500)
     HDL: float = Field(..., ge=5, le=200)
     BUN: int = Field(..., ge=3, le=200)
@@ -72,10 +72,10 @@ class PatientFeatures(BaseModel):
     WBC: int = Field(..., ge=1000, le=50000, description="White blood cells")
     Lymph: int = Field(..., ge=0, le=100, description="Lymphocyte %")
     Neut: int = Field(..., ge=0, le=100, description="Neutrophil %")
-    PLT: int = Field(..., ge=10000, le=1000000, description="Platelets")
+    PLT: int = Field(..., ge=10, le=1500, description="Platelets (x1000/uL)")
     # Echo
     EF_TTE: int = Field(..., ge=5, le=90, description="Ejection fraction (TTE)")
-    RegionRWMA: int = Field(0, description="Region with RWMA 0/1")
+    RegionRWMA: int = Field(0, ge=0, le=4, description="Regional wall motion abnormality (0 = none, 1-4 = region)")
     VHD: Literal["N", "mild", "Moderate", "Severe"] = "N"
 
 
@@ -88,6 +88,7 @@ SCHEMA_TO_COLUMN = {
     "WeakPeripheralPulse": "Weak Peripheral Pulse",
     "LungRales": "Lung rales",
     "SystolicMurmur": "Systolic Murmur",
+    "DiastolicMurmur": "Diastolic Murmur",
     "TypicalChestPain": "Typical Chest Pain",
     "FunctionClass": "Function Class",
     "ExertionalCP": "Exertional CP",
@@ -122,4 +123,5 @@ class ShapExplanation(BaseModel):
 
 
 class ExplainResponse(PredictionResponse):
-    explanation: ShapExplanation
+    explanation: ShapExplanation  # overall CAD model (kept for compatibility)
+    explanations: dict[str, ShapExplanation]  # per model: cad, lad, lcx, rca

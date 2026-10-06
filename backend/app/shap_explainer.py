@@ -4,7 +4,7 @@ Uses XGBoost's native SHAP (pred_contribs) rather than shap.TreeExplainer,
 to avoid the shap 0.49 / xgboost 3.x incompatibility where base_score is
 stored as a string like '[5E-1]'.
 
-Returns per-feature SHAP values for the CAD prediction (overall risk),
+Returns per-feature SHAP values for one model (CAD or a single vessel),
 which the frontend renders as a waterfall/bar breakdown.
 """
 from __future__ import annotations

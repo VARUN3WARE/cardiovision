@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from app.encoders import encode_dict
 from app.model import load_encoding_map, load_features, load_models, predict_all
-from app.schemas import SCHEMA_TO_COLUMN
+from app.schemas import SCHEMA_TO_COLUMN, PatientFeatures
 from app.shap_explainer import ShapExplainer
 import numpy as np
 
@@ -24,9 +24,19 @@ patient = {
     "QWave": 0, "StElevation": 1, "StDepression": 1, "Tinversion": 1,
     "LVH": "N", "PoorRProgression": "N", "BBB": "N",
     "FBS": 120, "CR": 1.1, "TG": 180, "LDL": 150, "HDL": 38, "BUN": 16, "ESR": 12,
-    "HB": 13.5, "K": 4.2, "Na": 140, "WBC": 7500, "Lymph": 30, "Neut": 65, "PLT": 250000,
+    "HB": 13.5, "K": 4.2, "Na": 140, "WBC": 7500, "Lymph": 30, "Neut": 65, "PLT": 250,
     "EF_TTE": 50, "RegionRWMA": 1, "VHD": "N",
 }
+
+# Every schema field must map onto a model feature and vice versa; a missing
+# mapping would silently encode the feature as 0 for every request.
+_mapped = {SCHEMA_TO_COLUMN.get(f, f) for f in PatientFeatures.model_fields}
+_features = set(load_features())
+assert _mapped == _features, (
+    f"schema/feature mismatch: unmapped schema fields {_mapped - _features}, "
+    f"features without a schema field {_features - _mapped}"
+)
+PatientFeatures(**patient)  # sample patient must pass validation
 
 # Convert schema field names -> dataset column names (same as main.to_dataset_columns).
 ds_features = {SCHEMA_TO_COLUMN.get(k, k): v for k, v in patient.items()}

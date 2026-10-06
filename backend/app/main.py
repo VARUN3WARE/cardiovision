@@ -52,8 +52,8 @@ def _encoding():
 
 
 @lru_cache
-def _explainer():
-    return ShapExplainer(_models()["cad"])
+def _explainers() -> dict[str, ShapExplainer]:
+    return {target: ShapExplainer(model) for target, model in _models().items()}
 
 
 @app.get("/health")
@@ -101,7 +101,7 @@ def explain(features: PatientFeatures):
         ds_features = to_dataset_columns(features)
         vec = encode_dict(ds_features, _encoding(), _features())
         x = np.array([vec], dtype=float)
-        exp = _explainer().explain(x, _features())
+        exps = {t: e.explain(x, _features()) for t, e in _explainers().items()}
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return ExplainResponse(
@@ -117,5 +117,6 @@ def explain(features: PatientFeatures):
             lcx=result["lcx"]["prediction"],
             rca=result["rca"]["prediction"],
         ),
-        explanation=exp,
+        explanation=exps["cad"],
+        explanations=exps,
     )
