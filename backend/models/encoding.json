@@ -1,0 +1,88 @@
+{
+  "Sex": {
+    "Fmale": 0.0,
+    "Male": 1.0
+  },
+  "Obesity": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "CRF": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "CVA": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Airway disease": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Thyroid Disease": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "CHF": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "DLP": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Weak Peripheral Pulse": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Lung rales": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Systolic Murmur": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Diastolic Murmur": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Dyspnea": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Atypical": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Nonanginal": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Exertional CP": {
+    "N": 0.0
+  },
+  "LowTH Ang": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "LVH": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "Poor R Progression": {
+    "N": 0.0,
+    "Y": 1.0
+  },
+  "BBB": {
+    "LBBB": 0.0,
+    "N": 1.0,
+    "RBBB": 2.0
+  },
+  "VHD": {
+    "Moderate": 0.0,
+    "N": 1.0,
+    "Severe": 2.0,
+    "mild": 3.0
+  }
+}

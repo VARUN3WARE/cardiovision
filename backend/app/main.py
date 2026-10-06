@@ -3,27 +3,37 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+import numpy as np
 from fastapi import FastAPI, HTTPException
 
-from .model import load_features, load_models, predict_all
-from .schemas import (
-    ExplainResponse,
-    PatientFeatures,
-    PredictionResponse,
-    VesselProbability,
+from app.encoders import encode_dict
+from app.model import load_encoding_map, load_features, load_models, predict_all
+from app.schemas import (
+    ExplainResponse, PatientFeatures, PredictionResponse,
+    SCHEMA_TO_COLUMN, VesselProbability,
 )
-from .shap_explainer import ShapExplainer
+from app.shap_explainer import ShapExplainer
 
 app = FastAPI(
     title="CardioVision API",
     description="Cardiovascular risk prediction (Track A) — decision support only.",
+    version="0.1.0",
 )
 
-# Safety disclaimer surfaced in the API itself.
 SAFETY = (
     "Predictions are for decision support / educational purposes only and are "
     "not a substitute for formal diagnostic imaging."
 )
+
+
+def to_dataset_columns(features: PatientFeatures) -> dict:
+    """Convert schema field names to dataset column names."""
+    raw = features.model_dump()
+    out = {}
+    for key, val in raw.items():
+        col = SCHEMA_TO_COLUMN.get(key, key)
+        out[col] = val
+    return out
 
 
 @lru_cache
@@ -37,6 +47,11 @@ def _features():
 
 
 @lru_cache
+def _encoding():
+    return load_encoding_map()
+
+
+@lru_cache
 def _explainer():
     return ShapExplainer(_models()["cad"])
 
@@ -46,11 +61,21 @@ def health():
     return {"status": "ok", "safety_disclaimer": SAFETY}
 
 
+@app.get("/features")
+def features():
+    """Return the feature list and categorical encoding (for the frontend form)."""
+    return {"features": _features(), "encoding": _encoding(), "safety_disclaimer": SAFETY}
+
+
+def _predict(features: PatientFeatures) -> dict:
+    ds_features = to_dataset_columns(features)
+    return predict_all(_models(), _features(), _encoding(), ds_features)
+
+
 @app.post("/predict", response_model=PredictionResponse)
 def predict(features: PatientFeatures):
     try:
-        feature_names = _features()
-        result = predict_all(_models(), feature_names, features.model_dump())
+        result = _predict(features)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return PredictionResponse(
@@ -71,17 +96,15 @@ def predict(features: PatientFeatures):
 
 @app.post("/explain", response_model=ExplainResponse)
 def explain(features: PatientFeatures):
-    from .model import features_to_vector
-    import numpy as np
-
     try:
-        feature_names = _features()
-        result = predict_all(_models(), feature_names, features.model_dump())
-        x = features_to_vector(features.model_dump(), feature_names)
-        exp = _explainer().explain(np.asarray(x), feature_names)
+        result = _predict(features)
+        ds_features = to_dataset_columns(features)
+        vec = encode_dict(ds_features, _encoding(), _features())
+        x = np.array([vec], dtype=float)
+        exp = _explainer().explain(x, _features())
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    base = ExplainResponse(
+    return ExplainResponse(
         cad_probability=result["cad"]["probability"],
         vessel_probabilities=VesselProbability(
             lad=result["lad"]["probability"],
@@ -96,4 +119,3 @@ def explain(features: PatientFeatures):
         ),
         explanation=exp,
     )
-    return base

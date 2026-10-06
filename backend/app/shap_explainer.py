@@ -1,6 +1,9 @@
 """SHAP-based clinical interpretability.
 
-Uses TreeExplainer for the XGBoost / gradient-boosting classifiers.
+Uses XGBoost's native SHAP (pred_contribs) rather than shap.TreeExplainer,
+to avoid the shap 0.49 / xgboost 3.x incompatibility where base_score is
+stored as a string like '[5E-1]'.
+
 Returns per-feature SHAP values for the CAD prediction (overall risk),
 which the frontend renders as a waterfall/bar breakdown.
 """
@@ -9,24 +12,26 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import shap
+import xgboost as xgb
 
 
 class ShapExplainer:
-    """Wraps a TreeExplainer for the CAD model.
+    """Wraps an XGBoost model and computes SHAP values via pred_contribs.
 
-    The explainer is built once on model load and reused across requests.
+    The last column of pred_contribs output is the base value (expected output);
+    the rest are per-feature SHAP contributions.
     """
 
-    def __init__(self, cad_model: Any):
-        self.explainer = shap.TreeExplainer(cad_model)
+    def __init__(self, model: Any):
+        self.model = model
+        self.booster = model.get_booster()
 
     def explain(self, x: np.ndarray, feature_names: list[str]) -> dict:
-        """Return base value, feature names, shap values, and feature values."""
-        shap_values = self.explainer.shap_values(x)[0]
-        base = float(self.explainer.expected_value)
-        if isinstance(base, list):  # some explainers return a list
-            base = float(base[1] if len(base) > 1 else base[0])
+        dmatrix = xgb.DMatrix(x, feature_names=feature_names)
+        contribs = self.booster.predict(dmatrix, pred_contribs=True)
+        row = contribs[0]
+        base = float(row[-1])
+        shap_values = row[:-1]
         return {
             "base_value": base,
             "feature_names": list(feature_names),
