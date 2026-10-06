@@ -13,6 +13,7 @@ node_modules/
 dist/
 .vite/
 *.log
+*.tsbuildinfo
 
 # Data (keep out of git — too large / licensing)
 backend/data/*.csv

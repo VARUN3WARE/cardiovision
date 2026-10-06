@@ -1,7 +1,7 @@
 # HANDOFF -- CardioVision (Track A)
 
 Handoff doc for the next agent (Claude) picking up this project.
-Last updated: 2026-10-06, ~midnight. Day 1 complete. Day 2+ pending.
+Last updated: 2026-10-07. Day 1 + Day 2 complete. See section 7b for Day 2 work.
 
 ## 1. What this project is
 
@@ -22,12 +22,12 @@ Track C (speech analytics) was evaluated and rejected. See ../hackathon_details.
 | Criterion | Weight | Status |
 |---|---|---|
 | Predictive Performance | 30% | strong baseline done |
-| 3D Visualization | 25% | placeholder scene, needs real mesh |
-| Clinical Interpretability | 20% | SHAP working |
-| System Integration | 15% | backend+frontend built separately, not yet run together in browser |
+| 3D Visualization | 25% | procedural anatomical heart, arteries in real grooves, territories, click-to-focus |
+| Clinical Interpretability | 20% | per-vessel SHAP with clinical labels, baseline->patient reconciliation |
+| System Integration | 15% | verified end to end in the browser (presets -> /explain -> 3D + SHAP) |
 | Technical Implementation | 10% | clean arch, reproducible |
 
-Biggest remaining win = 3D Visualization (25%). Currently a stylized sphere + tube arteries. Sourcing a real heart .glb and mapping LAD/LCX/RCA to it is the highest-leverage Day 2 task.
+Day 2 closed the 3D gap. Biggest remaining wins now: model tuning for LCX/RCA (bounded), the 6-page doc, and the demo video.
 
 ## 3. How to run it
 
@@ -102,7 +102,49 @@ Example patient (preloaded) predicts CAD=1.000, LAD=0.998, LCX=0.697, RCA=0.972.
 - 3D scene (placeholder), dashboard, SHAP panel components
 - tsc --noEmit + vite build pass
 
-## 8. What's NEXT (Day 2+), in priority order
+## 7b. What's DONE (Day 2, 7 Oct)
+
+- **Bug fixes (affected every prediction before):**
+  - PLT is stored in thousands in the dataset (25-742). The schema required >= 10000 and the example sent
+    250000, wildly out of distribution. Schema now 10-1500 (x10^3/uL); 24 real rows previously failed validation.
+  - `DiastolicMurmur` was missing from `SCHEMA_TO_COLUMN`, so it was silently encoded as 0 ("N") for every request.
+    `test_pipeline.py` now asserts the schema and feature list map 1:1.
+  - RegionRWMA is 0-4 (region), not 0/1; FunctionClass 0-4; binary flags now bounded 0/1; TG max raised to 2000.
+- `/explain` returns `explanations: {cad, lad, lcx, rca}` (SHAP per model). `explanation` kept for compatibility.
+- `make_presets.py`: picks 4 real patients (normal / isolated LAD / isolated RCA / 3-vessel) using OUT-OF-FOLD
+  probabilities -> `frontend/src/presets.json`. The UI shows their angiography ground truth.
+- 3D: decided against an external .glb (licensing + no named coronary nodes). `heartAnatomy.ts` builds an
+  analytic heart surface P(u, v) so arteries are projected exactly into the grooves. Includes atria, aorta,
+  pulmonary trunk + PAs, SVC/IVC, 4 pulmonary veins, LAD+D1/D2, LCX+OM1/OM2, RCA+AM+PDA, left main.
+- `HeartScene.tsx`: risk colors, hover/click selection, labels with %, perfusion-territory mode, selected
+  vessel's territory highlight, camera swings to the selected vessel, Reset, heartbeat at patient's PR.
+- `ExplanationPanel`: tabs Overall/LAD/LCX/RCA (synced with 3D selection), diverging SHAP bars, clinical labels
+  + units (`featureLabels.ts`), baseline -> patient probability reconciliation.
+- Dashboard: risk level, clickable vessel cards, ground truth for presets. Disclaimer strengthened.
+- Running in the Claude desktop app: `../.claude/launch.json` (parent dir) defines `api` (:8000) and `web` (:5173).
+
+Realism pass (also 7 Oct): researched realism cues from cadaveric specimens / atlases and existing models.
+Downloadable heart meshes with coronaries exist (Sketchfab "Cardiac Anatomy: coronary arteries", Get3DModels)
+but are mostly CC-BY-NC and have no separable LAD/LCX/RCA, so we kept the procedural model and added:
+lobular epicardial fat in the grooves (arteries half-embedded), cardiac veins + coronary sinus, tapering
+tortuous arteries with more branches, aortic arch branches, crinkled auricles, cut vessel stumps, generated
+muscle-fibre normal map, clearcoat + sheen tissue, Lightformer environment, ContactShadows, and
+@react-three/postprocessing@2 (N8AO, Bloom, ToneMapping, Vignette; "HD" toggle). Mid-risk color is now amber
+(yellow vanished into fat). Clicking heart wall selects the perfusing artery; a `<Bvh>` wrapper keeps raycasts
+cheap. First load takes a few seconds (shader compilation) behind a "Building 3D heart model" overlay.
+
+Gotchas found on Day 2:
+- R3F only raycasts objects that have handlers, so opaque meshes without handlers do NOT block clicks:
+  arteries on the back were clickable through the heart. Myocardium/atria/great vessels now stop propagation.
+- @react-three/postprocessing v3 needs R3F 9; we're on R3F 8, so stay on v2.x.
+- R3F listens for clicks on the canvas wrapper, so DOM overlays inside `<Html>` must `stopPropagation`
+  or `onPointerMissed` immediately clears the selection.
+- `useThree().size` can be 0 on the first layout pass; guard before dividing (it NaN'd the camera once).
+- `fastapi.testclient` needs httpx2, which isn't installed; test HTTP with a real uvicorn + curl instead.
+
+## 8. What's NEXT (Day 3+), in priority order
+
+Day 2 items below are done (3D mesh, integration, click interaction, per-vessel SHAP, presets).
 
 ### Day 2 -- 3D mesh + integration (highest leverage)
 1. Source a real heart .glb/.gltf (CC0 / open license): NIH 3D Print Exchange, BodyParts3D, Sketchfab (filter CC0), Open Anatomy Project. Place in frontend/public/heart.glb, load with useGLTF in HeartScene.tsx.
@@ -143,4 +185,4 @@ Example patient (preloaded) predicts CAD=1.000, LAD=0.998, LCX=0.697, RCA=0.972.
 
 ## 10. TL;DR for Claude
 
-Track A is locked. Backend ML + API + SHAP are done and working (CAD AUC .906). Frontend builds and is wired to the real schema. The single highest-value next step is sourcing a real heart mesh and mapping the 3 arteries to it (25% of the rubric, currently a placeholder). Watch the gotchas in section 6 -- especially the shap/xgboost incompat (use native pred_contribs) and the sandbox network isolation (use required_permissions: ["all"] for installs/push). Don't switch tracks.
+Track A is locked. Backend ML + API + per-vessel SHAP done (CAD AUC .906). Frontend has a procedural anatomical 3D heart with risk-colored coronaries, perfusion territories and click-to-inspect, verified end to end in the browser. Next: bounded LCX/RCA tuning, the 6-page technical doc, demo video, Devpost. Watch the gotchas in section 6 -- especially the shap/xgboost incompat (use native pred_contribs) and the sandbox network isolation (use required_permissions: ["all"] for installs/push). Don't switch tracks.
