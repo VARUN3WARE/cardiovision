@@ -22,7 +22,7 @@ export interface ExplainResponse extends PredictionResponse {
   explanation: ShapExplanation;
 }
 
-export async function predict(features: Record<string, number>): Promise<PredictionResponse> {
+export async function predict(features: Record<string, unknown>): Promise<PredictionResponse> {
   const res = await fetch("/predict", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -32,7 +32,7 @@ export async function predict(features: Record<string, number>): Promise<Predict
   return res.json();
 }
 
-export async function explain(features: Record<string, number>): Promise<ExplainResponse> {
+export async function explain(features: Record<string, unknown>): Promise<ExplainResponse> {
   const res = await fetch("/explain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

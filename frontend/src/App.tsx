@@ -16,7 +16,7 @@ export default function App() {
     ? prediction.vessel_probabilities
     : { lad: 0, lcx: 0, rca: 0 };
 
-  async function onSubmit(features: Record<string, number>) {
+  async function onSubmit(features: Record<string, unknown>) {
     setLoading(true);
     setError(null);
     try {
