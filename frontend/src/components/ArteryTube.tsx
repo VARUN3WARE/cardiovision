@@ -94,24 +94,52 @@ export default function ArteryTube(props: Props) {
         <meshPhysicalMaterial ref={capMaterial} {...materialProps} />
       </mesh>
       {labelPos && vessel && (
-        <Html position={labelPos} center distanceFactor={5} zIndexRange={[10, 0]} occlude={occluders}>
-          <button
-            // Stop the DOM event reaching the canvas, which would treat it as a missed click.
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(vessel === selected ? null : vessel);
-            }}
-            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow ${
-              isSelected ? "bg-white text-slate-900" : "bg-slate-900/85 text-white"
-            }`}
-            style={{ borderColor: `#${color.getHexString()}` }}
-          >
-            {name}
-            {p !== null && <span className="ml-1 font-normal opacity-80">{(p * 100).toFixed(0)}%</span>}
-          </button>
-        </Html>
+        <VesselLabel
+          vessel={vessel}
+          name={name}
+          position={labelPos}
+          p={p}
+          color={color}
+          selected={selected}
+          occluders={occluders}
+          onSelect={onSelect}
+        />
       )}
     </group>
+  );
+}
+
+interface LabelProps {
+  vessel: Vessel;
+  name: string;
+  position: THREE.Vector3;
+  p: number | null;
+  color: THREE.Color;
+  selected: Vessel | null;
+  occluders: RefObject<THREE.Object3D>[] | undefined;
+  onSelect: (v: Vessel | null) => void;
+}
+
+/** Clickable risk label pinned to a vessel (shared by every heart model). */
+export function VesselLabel({ vessel, name, position, p, color, selected, occluders, onSelect }: LabelProps) {
+  const isSelected = vessel === selected;
+  return (
+    <Html position={position} center distanceFactor={5} zIndexRange={[10, 0]} occlude={occluders}>
+      <button
+        // Stop the DOM event reaching the canvas, which would treat it as a missed click.
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(isSelected ? null : vessel);
+        }}
+        className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow ${
+          isSelected ? "bg-white text-slate-900" : "bg-slate-900/85 text-white"
+        }`}
+        style={{ borderColor: `#${color.getHexString()}` }}
+      >
+        {name}
+        {p !== null && <span className="ml-1 font-normal opacity-80">{(p * 100).toFixed(0)}%</span>}
+      </button>
+    </Html>
   );
 }

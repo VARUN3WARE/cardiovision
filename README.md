@@ -71,6 +71,19 @@ calibration, literature comparison, limitations) · [demo video script](docs/dem
   normal and smoothed, so the risk-coloured vessels lie in the real grooves. Perfusion territories are computed
   per vertex from the nearest artery tree and masked to the ventricles below the AV groove; clicking the wall,
   camera focus, labels, anatomy pins and the heartbeat all work on this model.
+- **Atlas 3D heart in the chest** (toggle): built from **BodyParts3D**, the anatomy database named in the
+  brief. Every coronary branch is a named anatomical structure (59 BodyParts3D meshes with FMA ids: LAD trunk,
+  diagonals, septals, conus and right anterior branches; circumflex; RCA trunk, conus, marginal, ventricular and
+  posterior branches, PDA and its septals; left main) and takes its colour from exactly one model output; the
+  left main is neutral because the dataset does not label it. Clicking a branch names it ("Diagonal branch of
+  anterior descending branch of left coronary artery, FMA3860 → LAD → coloured by the LAD model"). The heart
+  opens inside a ghosted chest (skin, ribs, costal cartilage, sternum, spine, clavicles, scapulae, diaphragm,
+  trachea) and the camera flies in; a camera-facing cutaway keeps the heart visible through the chest wall from
+  any angle. X-ray mode shows the vessels on the back of the heart from the front; A/P/L/R/S/I buttons snap to
+  the standard views. Territories come from each wall vertex's distance to the LAD/LCX/RCA trees (right
+  dominance, as in this reference heart); epicardial fat follows the groove vessels. Both GLBs together are
+  under 0.8 MB. Rebuild from the official archive with `npm run assets:bp3d` (fetches only the 181 listed
+  meshes over HTTP Range, CRC-checked, never the whole 143 MB zip).
 - **Schematic 3D heart** (toggle, and automatic fallback if the model file is missing or fails to load;
   procedural, no external assets): ventricles, crinkled atrial
   appendages, aortic root and arch with its three branches, pulmonary trunk/arteries, venae cavae and pulmonary
@@ -195,6 +208,10 @@ frontend/
 - 3D heart model: ["Realistic Human Heart"](https://sketchfab.com/3d-models/realistic-human-heart-3f8072336ce94d18b3d0d055a1ece089)
   by **neshallads**, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
   (`frontend/public/models/heart.glb`, used unmodified; attribution also shown in the app).
+- Atlas heart and chest: **BodyParts3D, © The Database Center for Life Science licensed under CC Attribution 4.0
+  International** ([licence](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)); derived files
+  `frontend/public/models/bp3d_*.glb` are distributed under CC BY-SA 4.0. Changes and sources:
+  [`frontend/public/models/ATTRIBUTION.md`](frontend/public/models/ATTRIBUTION.md).
 - Dataset: Z-Alizadeh Sani et al., UCI Machine Learning Repository (see below).
 
 ## Dataset

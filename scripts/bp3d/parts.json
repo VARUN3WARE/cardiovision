@@ -1,0 +1,1099 @@
+{
+ "source": {
+  "archive": "https://dbarchive.biosciencedbc.jp/data/bodyparts3d/LATEST/isa_BP3D_4.0_obj_99.zip",
+  "credit": "BodyParts3D, (c) The Database Center for Life Science licensed under CC Attribution 4.0 International",
+  "licence": "https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html",
+  "coordinates": "millimetres, patient LPS-like frame; glTF = (x, z, -y) * 0.001"
+ },
+ "groups": {
+  "heart": {
+   "output": "bp3d_heart.glb",
+   "parts": [
+    {
+     "key": "ventricles",
+     "layer": "myocardium",
+     "fma": "FMA13884",
+     "label": "Ventricular wall",
+     "files": [
+      "FJ2428"
+     ]
+    },
+    {
+     "key": "atria",
+     "layer": "atrium",
+     "fma": "FMA13883",
+     "label": "Atrial walls",
+     "files": [
+      "FJ2438",
+      "FJ2439"
+     ]
+    },
+    {
+     "key": "lv_cavity",
+     "layer": "cavity",
+     "fma": "FMA9466",
+     "label": "Left ventricular cavity",
+     "files": [
+      "FJ2422"
+     ]
+    },
+    {
+     "key": "rv_cavity",
+     "layer": "cavity",
+     "fma": "FMA9291",
+     "label": "Right ventricular cavity",
+     "files": [
+      "FJ2423"
+     ]
+    },
+    {
+     "key": "aorta",
+     "layer": "artery",
+     "fma": "FMA3734",
+     "label": "Aorta and arch branches",
+     "files": [
+      "FJ3413",
+      "FJ3411",
+      "FJ1931",
+      "FJ3417",
+      "FJ3483",
+      "FJ3479"
+     ]
+    },
+    {
+     "key": "pulmonary",
+     "layer": "pulmonary",
+     "fma": "FMA8612",
+     "label": "Pulmonary trunk and arteries",
+     "files": [
+      "FJ2966",
+      "FJ3019",
+      "FJ2924"
+     ]
+    },
+    {
+     "key": "venae_cavae",
+     "layer": "vein",
+     "fma": "FMA4720",
+     "label": "Venae cavae",
+     "files": [
+      "FJ3645",
+      "FJ3441"
+     ]
+    },
+    {
+     "key": "lad",
+     "layer": "coronary",
+     "vessel": "lad",
+     "fma": "FMA3862",
+     "label": "Anterior interventricular branch (LAD)",
+     "files": [
+      "FJ2631",
+      "FJ2632",
+      "FJ2633",
+      "FJ2634",
+      "FJ2635",
+      "FJ2636",
+      "FJ2637",
+      "FJ2638",
+      "FJ2639",
+      "FJ2640",
+      "FJ2641",
+      "FJ2642",
+      "FJ2643",
+      "FJ2644",
+      "FJ2645",
+      "FJ2646",
+      "FJ2647",
+      "FJ2648",
+      "FJ2732",
+      "FJ2733",
+      "FJ2734"
+     ]
+    },
+    {
+     "key": "lcx",
+     "layer": "coronary",
+     "vessel": "lcx",
+     "fma": "FMA3895",
+     "label": "Circumflex branch (LCX)",
+     "files": [
+      "FJ2649",
+      "FJ2650",
+      "FJ2651",
+      "FJ2652",
+      "FJ2653",
+      "FJ2654"
+     ]
+    },
+    {
+     "key": "rca",
+     "layer": "coronary",
+     "vessel": "rca",
+     "fma": "FMA50039",
+     "label": "Right coronary artery (RCA)",
+     "files": [
+      "FJ2667",
+      "FJ2668",
+      "FJ2670",
+      "FJ2671",
+      "FJ2672",
+      "FJ2673",
+      "FJ2674",
+      "FJ2675",
+      "FJ2676",
+      "FJ2677",
+      "FJ2692",
+      "FJ2693",
+      "FJ2694",
+      "FJ2695",
+      "FJ2696",
+      "FJ2697",
+      "FJ2698",
+      "FJ2699",
+      "FJ2700",
+      "FJ2714",
+      "FJ2715",
+      "FJ2716",
+      "FJ2717",
+      "FJ2718",
+      "FJ2719",
+      "FJ2720",
+      "FJ2721",
+      "FJ2722",
+      "FJ2723",
+      "FJ2735",
+      "FJ2736"
+     ]
+    },
+    {
+     "key": "lm",
+     "layer": "coronary",
+     "vessel": "lm",
+     "fma": "FMA3855",
+     "label": "Left main coronary artery",
+     "files": [
+      "FJ2737"
+     ]
+    },
+    {
+     "key": "cardiac_veins",
+     "layer": "cardiac_vein",
+     "fma": "FMA12846",
+     "label": "Cardiac veins",
+     "files": [
+      "FJ2655",
+      "FJ2656",
+      "FJ2657",
+      "FJ2658",
+      "FJ2659",
+      "FJ2660",
+      "FJ2661",
+      "FJ2662",
+      "FJ2663",
+      "FJ2664",
+      "FJ2665",
+      "FJ2678",
+      "FJ2679",
+      "FJ2680",
+      "FJ2681",
+      "FJ2682",
+      "FJ2683",
+      "FJ2684",
+      "FJ2685",
+      "FJ2686",
+      "FJ2687",
+      "FJ2688",
+      "FJ2689",
+      "FJ2690",
+      "FJ2691",
+      "FJ2701",
+      "FJ2702",
+      "FJ2703",
+      "FJ2704",
+      "FJ2705",
+      "FJ2706",
+      "FJ2707",
+      "FJ2708",
+      "FJ2709",
+      "FJ2710",
+      "FJ2711",
+      "FJ2712",
+      "FJ2713",
+      "FJ2724",
+      "FJ2725",
+      "FJ2727",
+      "FJ2728",
+      "FJ2729",
+      "FJ2730",
+      "FJ2731"
+     ]
+    }
+   ]
+  },
+  "thorax": {
+   "output": "bp3d_thorax.glb",
+   "parts": [
+    {
+     "key": "skin",
+     "layer": "skin",
+     "fma": "FMA7163",
+     "label": "Skin",
+     "files": [
+      "FJ2810"
+     ]
+    },
+    {
+     "key": "ribs",
+     "layer": "bone",
+     "fma": "FMA7574",
+     "label": "Ribs",
+     "files": [
+      "FJ3225",
+      "FJ3226",
+      "FJ3227",
+      "FJ3228",
+      "FJ3229",
+      "FJ3230",
+      "FJ3231",
+      "FJ3232",
+      "FJ3233",
+      "FJ3234",
+      "FJ3235",
+      "FJ3236",
+      "FJ3330",
+      "FJ3331",
+      "FJ3332",
+      "FJ3334",
+      "FJ3336",
+      "FJ3338",
+      "FJ3340",
+      "FJ3342",
+      "FJ3344",
+      "FJ3346",
+      "FJ3347",
+      "FJ3348"
+     ]
+    },
+    {
+     "key": "costal_cartilage",
+     "layer": "cartilage",
+     "fma": "FMA7591",
+     "label": "Costal cartilages",
+     "files": [
+      "FJ3239",
+      "FJ3242",
+      "FJ3245",
+      "FJ3248",
+      "FJ3251",
+      "FJ3254",
+      "FJ3255",
+      "FJ3333",
+      "FJ3335",
+      "FJ3337",
+      "FJ3339",
+      "FJ3341",
+      "FJ3343",
+      "FJ3345"
+     ]
+    },
+    {
+     "key": "sternum",
+     "layer": "bone",
+     "fma": "FMA7485",
+     "label": "Sternum",
+     "files": [
+      "FJ3153",
+      "FJ3178",
+      "FJ3290"
+     ]
+    },
+    {
+     "key": "thoracic_spine",
+     "layer": "bone",
+     "fma": "FMA9139",
+     "label": "Thoracic vertebrae",
+     "files": [
+      "FJ3154",
+      "FJ3155",
+      "FJ3156",
+      "FJ3158",
+      "FJ3160",
+      "FJ3163",
+      "FJ3166",
+      "FJ3169",
+      "FJ3171",
+      "FJ3173",
+      "FJ3174",
+      "FJ3175"
+     ]
+    },
+    {
+     "key": "clavicles",
+     "layer": "bone",
+     "fma": "FMA13321",
+     "label": "Clavicles",
+     "files": [
+      "FJ3237",
+      "FJ3362"
+     ]
+    },
+    {
+     "key": "scapulae",
+     "layer": "bone",
+     "fma": "FMA13394",
+     "label": "Scapulae",
+     "files": [
+      "FJ3279",
+      "FJ3384"
+     ]
+    },
+    {
+     "key": "diaphragm",
+     "layer": "diaphragm",
+     "fma": "FMA13295",
+     "label": "Diaphragm",
+     "files": [
+      "FJ3131"
+     ]
+    },
+    {
+     "key": "trachea",
+     "layer": "airway",
+     "fma": "FMA7394",
+     "label": "Trachea and left main bronchus",
+     "files": [
+      "FJ2541",
+      "FJ2450"
+     ]
+    }
+   ]
+  }
+ },
+ "elements": {
+  "FJ1931": {
+   "fma": "FMA87217",
+   "name": "descending thoracic aorta"
+  },
+  "FJ2422": {
+   "fma": "FMA9466",
+   "name": "cavity of left ventricle"
+  },
+  "FJ2423": {
+   "fma": "FMA9291",
+   "name": "cavity of right ventricle"
+  },
+  "FJ2428": {
+   "fma": "FMA13884",
+   "name": "wall of ventricle"
+  },
+  "FJ2438": {
+   "fma": "FMA9531",
+   "name": "wall of left atrium"
+  },
+  "FJ2439": {
+   "fma": "FMA9457",
+   "name": "wall of right atrium"
+  },
+  "FJ2450": {
+   "fma": "FMA7396",
+   "name": "left main bronchus"
+  },
+  "FJ2541": {
+   "fma": "FMA7394",
+   "name": "trachea"
+  },
+  "FJ2631": {
+   "fma": "FMA74912",
+   "name": "trunk of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2632": {
+   "fma": "FMA3872",
+   "name": "first right anterior branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2633": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2634": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2635": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2636": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2637": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2638": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2639": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2640": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2641": {
+   "fma": "FMA3876",
+   "name": "third right anterior branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2642": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2643": {
+   "fma": "FMA3868",
+   "name": "conus branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2644": {
+   "fma": "FMA3868",
+   "name": "conus branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2645": {
+   "fma": "FMA3872",
+   "name": "first right anterior branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2646": {
+   "fma": "FMA3874",
+   "name": "second right anterior branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2647": {
+   "fma": "FMA3876",
+   "name": "third right anterior branch of anterior interventricular branch of left coronary artery"
+  },
+  "FJ2648": {
+   "fma": "FMA3860",
+   "name": "diagonal branch of anterior descending branch of left coronary artery"
+  },
+  "FJ2649": {
+   "fma": "FMA3895",
+   "name": "circumflex branch of left coronary artery"
+  },
+  "FJ2650": {
+   "fma": "FMA3895",
+   "name": "circumflex branch of left coronary artery"
+  },
+  "FJ2651": {
+   "fma": "FMA3895",
+   "name": "circumflex branch of left coronary artery"
+  },
+  "FJ2652": {
+   "fma": "FMA3895",
+   "name": "circumflex branch of left coronary artery"
+  },
+  "FJ2653": {
+   "fma": "FMA3895",
+   "name": "circumflex branch of left coronary artery"
+  },
+  "FJ2654": {
+   "fma": "FMA3895",
+   "name": "circumflex branch of left coronary artery"
+  },
+  "FJ2655": {
+   "fma": "FMA4706",
+   "name": "coronary sinus"
+  },
+  "FJ2656": {
+   "fma": "FMA4707",
+   "name": "great cardiac vein"
+  },
+  "FJ2657": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2658": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2659": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2660": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2661": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2662": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2663": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2664": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2665": {
+   "fma": "FMA66403",
+   "name": "anterior interventricular vein"
+  },
+  "FJ2667": {
+   "fma": "FMA3818",
+   "name": "marginal branch of right coronary artery"
+  },
+  "FJ2668": {
+   "fma": "FMA3818",
+   "name": "marginal branch of right coronary artery"
+  },
+  "FJ2670": {
+   "fma": "FMA3807",
+   "name": "right conus artery"
+  },
+  "FJ2671": {
+   "fma": "FMA3815",
+   "name": "first anterior ventricular branch of right coronary artery"
+  },
+  "FJ2672": {
+   "fma": "FMA3818",
+   "name": "marginal branch of right coronary artery"
+  },
+  "FJ2673": {
+   "fma": "FMA3815",
+   "name": "first anterior ventricular branch of right coronary artery"
+  },
+  "FJ2674": {
+   "fma": "FMA3818",
+   "name": "marginal branch of right coronary artery"
+  },
+  "FJ2675": {
+   "fma": "FMA3818",
+   "name": "marginal branch of right coronary artery"
+  },
+  "FJ2676": {
+   "fma": "FMA3807",
+   "name": "right conus artery"
+  },
+  "FJ2677": {
+   "fma": "FMA3815",
+   "name": "first anterior ventricular branch of right coronary artery"
+  },
+  "FJ2678": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2679": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2680": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2681": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2682": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2683": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2684": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2685": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2686": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2687": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2688": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2689": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2690": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2691": {
+   "fma": "FMA4713",
+   "name": "middle cardiac vein"
+  },
+  "FJ2692": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2693": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2694": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2695": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2696": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2697": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2698": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2699": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2700": {
+   "fma": "FMA3840",
+   "name": "posterior interventricular branch of right coronary artery"
+  },
+  "FJ2701": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2702": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2703": {
+   "fma": "FMA4708",
+   "name": "left marginal vein"
+  },
+  "FJ2704": {
+   "fma": "FMA4708",
+   "name": "left marginal vein"
+  },
+  "FJ2705": {
+   "fma": "FMA4708",
+   "name": "left marginal vein"
+  },
+  "FJ2706": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2707": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2708": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2709": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2710": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2711": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2712": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2713": {
+   "fma": "FMA4712",
+   "name": "posterior vein of left ventricle"
+  },
+  "FJ2714": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2715": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2716": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2717": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2718": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2719": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2720": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2721": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2722": {
+   "fma": "FMA3837",
+   "name": "first posterior ventricular branch of right coronary artery"
+  },
+  "FJ2723": {
+   "fma": "FMA3802",
+   "name": "trunk of right coronary artery"
+  },
+  "FJ2724": {
+   "fma": "FMA4714",
+   "name": "small cardiac vein"
+  },
+  "FJ2725": {
+   "fma": "FMA76767",
+   "name": "anterior cardiac vein"
+  },
+  "FJ2727": {
+   "fma": "FMA4716",
+   "name": "right marginal vein"
+  },
+  "FJ2728": {
+   "fma": "FMA4716",
+   "name": "right marginal vein"
+  },
+  "FJ2729": {
+   "fma": "FMA4716",
+   "name": "right marginal vein"
+  },
+  "FJ2730": {
+   "fma": "FMA76767",
+   "name": "anterior cardiac vein"
+  },
+  "FJ2731": {
+   "fma": "FMA4714",
+   "name": "small cardiac vein"
+  },
+  "FJ2732": {
+   "fma": "FMA3892",
+   "name": "septal branch of anterior interventricular artery"
+  },
+  "FJ2733": {
+   "fma": "FMA3892",
+   "name": "septal branch of anterior interventricular artery"
+  },
+  "FJ2734": {
+   "fma": "FMA3892",
+   "name": "septal branch of anterior interventricular artery"
+  },
+  "FJ2735": {
+   "fma": "FMA3847",
+   "name": "first septal branch of right posterior interventricular artery"
+  },
+  "FJ2736": {
+   "fma": "FMA3848",
+   "name": "second septal branch of right posterior interventricular artery"
+  },
+  "FJ2737": {
+   "fma": "FMA3855",
+   "name": "trunk of left coronary artery"
+  },
+  "FJ2810": {
+   "fma": "FMA7163",
+   "name": "skin"
+  },
+  "FJ2924": {
+   "fma": "FMA50873",
+   "name": "left pulmonary artery"
+  },
+  "FJ2966": {
+   "fma": "FMA8615",
+   "name": "pulmonary arterial trunk"
+  },
+  "FJ3019": {
+   "fma": "FMA50872",
+   "name": "right pulmonary artery"
+  },
+  "FJ3131": {
+   "fma": "FMA13295",
+   "name": "diaphragm"
+  },
+  "FJ3153": {
+   "fma": "FMA67601",
+   "name": "process of organ"
+  },
+  "FJ3154": {
+   "fma": "FMA10037",
+   "name": "tenth thoracic vertebra"
+  },
+  "FJ3155": {
+   "fma": "FMA10059",
+   "name": "eleventh thoracic vertebra"
+  },
+  "FJ3156": {
+   "fma": "FMA10081",
+   "name": "twelfth thoracic vertebra"
+  },
+  "FJ3158": {
+   "fma": "FMA9165",
+   "name": "first thoracic vertebra"
+  },
+  "FJ3160": {
+   "fma": "FMA9187",
+   "name": "second thoracic vertebra"
+  },
+  "FJ3163": {
+   "fma": "FMA9209",
+   "name": "third thoracic vertebra"
+  },
+  "FJ3166": {
+   "fma": "FMA9248",
+   "name": "fourth thoracic vertebra"
+  },
+  "FJ3169": {
+   "fma": "FMA9922",
+   "name": "fifth thoracic vertebra"
+  },
+  "FJ3171": {
+   "fma": "FMA9945",
+   "name": "sixth thoracic vertebra"
+  },
+  "FJ3173": {
+   "fma": "FMA9968",
+   "name": "seventh thoracic vertebra"
+  },
+  "FJ3174": {
+   "fma": "FMA9991",
+   "name": "eighth thoracic vertebra"
+  },
+  "FJ3175": {
+   "fma": "FMA10014",
+   "name": "ninth thoracic vertebra"
+  },
+  "FJ3178": {
+   "fma": "FMA7487",
+   "name": "body of sternum"
+  },
+  "FJ3225": {
+   "fma": "FMA8472",
+   "name": "left tenth rib"
+  },
+  "FJ3226": {
+   "fma": "FMA8532",
+   "name": "left eleventh rib"
+  },
+  "FJ3227": {
+   "fma": "FMA8534",
+   "name": "left twelfth rib"
+  },
+  "FJ3228": {
+   "fma": "FMA7987",
+   "name": "left first rib"
+  },
+  "FJ3229": {
+   "fma": "FMA8012",
+   "name": "left second rib"
+  },
+  "FJ3230": {
+   "fma": "FMA8039",
+   "name": "left third rib"
+  },
+  "FJ3231": {
+   "fma": "FMA8148",
+   "name": "left fourth rib"
+  },
+  "FJ3232": {
+   "fma": "FMA8093",
+   "name": "left fifth rib"
+  },
+  "FJ3233": {
+   "fma": "FMA8202",
+   "name": "left sixth rib"
+  },
+  "FJ3234": {
+   "fma": "FMA8256",
+   "name": "left seventh rib"
+  },
+  "FJ3235": {
+   "fma": "FMA8310",
+   "name": "left eighth rib"
+  },
+  "FJ3236": {
+   "fma": "FMA8391",
+   "name": "left ninth rib"
+  },
+  "FJ3237": {
+   "fma": "FMA13323",
+   "name": "left clavicle"
+  },
+  "FJ3239": {
+   "fma": "FMA8005",
+   "name": "left first costal cartilage"
+  },
+  "FJ3242": {
+   "fma": "FMA8031",
+   "name": "left second costal cartilage"
+  },
+  "FJ3245": {
+   "fma": "FMA8058",
+   "name": "left third costal cartilage"
+  },
+  "FJ3248": {
+   "fma": "FMA8167",
+   "name": "left fourth costal cartilage"
+  },
+  "FJ3251": {
+   "fma": "FMA8112",
+   "name": "left fifth costal cartilage"
+  },
+  "FJ3254": {
+   "fma": "FMA8221",
+   "name": "left sixth costal cartilage"
+  },
+  "FJ3255": {
+   "fma": "FMA8275",
+   "name": "left seventh costal cartilage"
+  },
+  "FJ3279": {
+   "fma": "FMA13396",
+   "name": "left scapula"
+  },
+  "FJ3290": {
+   "fma": "FMA10483",
+   "name": "zone of bone organ"
+  },
+  "FJ3330": {
+   "fma": "FMA8445",
+   "name": "right tenth rib"
+  },
+  "FJ3331": {
+   "fma": "FMA8531",
+   "name": "right eleventh rib"
+  },
+  "FJ3332": {
+   "fma": "FMA8533",
+   "name": "right twelfth rib"
+  },
+  "FJ3333": {
+   "fma": "FMA7875",
+   "name": "right first costal cartilage"
+  },
+  "FJ3334": {
+   "fma": "FMA7857",
+   "name": "right first rib"
+  },
+  "FJ3335": {
+   "fma": "FMA7886",
+   "name": "right second costal cartilage"
+  },
+  "FJ3336": {
+   "fma": "FMA7882",
+   "name": "right second rib"
+  },
+  "FJ3337": {
+   "fma": "FMA7913",
+   "name": "right third costal cartilage"
+  },
+  "FJ3338": {
+   "fma": "FMA7909",
+   "name": "right third rib"
+  },
+  "FJ3339": {
+   "fma": "FMA7976",
+   "name": "right fourth costal cartilage"
+  },
+  "FJ3340": {
+   "fma": "FMA7957",
+   "name": "right fourth rib"
+  },
+  "FJ3341": {
+   "fma": "FMA8070",
+   "name": "right fifth costal cartilage"
+  },
+  "FJ3342": {
+   "fma": "FMA8066",
+   "name": "right fifth rib"
+  },
+  "FJ3343": {
+   "fma": "FMA8194",
+   "name": "right sixth costal cartilage"
+  },
+  "FJ3344": {
+   "fma": "FMA8175",
+   "name": "right sixth rib"
+  },
+  "FJ3345": {
+   "fma": "FMA8248",
+   "name": "right seventh costal cartilage"
+  },
+  "FJ3346": {
+   "fma": "FMA8229",
+   "name": "right seventh rib"
+  },
+  "FJ3347": {
+   "fma": "FMA8283",
+   "name": "right eighth rib"
+  },
+  "FJ3348": {
+   "fma": "FMA8364",
+   "name": "right ninth rib"
+  },
+  "FJ3362": {
+   "fma": "FMA13322",
+   "name": "right clavicle"
+  },
+  "FJ3384": {
+   "fma": "FMA13395",
+   "name": "right scapula"
+  },
+  "FJ3411": {
+   "fma": "FMA3768",
+   "name": "arch of aorta"
+  },
+  "FJ3413": {
+   "fma": "FMA3736",
+   "name": "ascending aorta"
+  },
+  "FJ3417": {
+   "fma": "FMA3932",
+   "name": "brachiocephalic artery"
+  },
+  "FJ3441": {
+   "fma": "FMA10951",
+   "name": "inferior vena cava"
+  },
+  "FJ3479": {
+   "fma": "FMA4694",
+   "name": "left subclavian artery"
+  },
+  "FJ3483": {
+   "fma": "FMA4058",
+   "name": "left common carotid artery"
+  },
+  "FJ3645": {
+   "fma": "FMA4720",
+   "name": "superior vena cava"
+  }
+ }
+}

@@ -6,8 +6,10 @@ import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
+import AtlasHeart, { type AtlasPick } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import SpecimenHeart from "./SpecimenHeart";
+import { ATLAS_CREDIT, atlasAvailable } from "./atlasAnatomy";
 import { SPECIMEN_CREDIT, specimenAvailable } from "./specimenAnatomy";
 import {
   ARTERIES, ATRIA, FAT_DARK, FAT_LIGHT, GREAT_VESSELS, MUSCLE_DARK, MUSCLE_LIGHT, NEUTRAL_ARTERY,
@@ -16,11 +18,32 @@ import {
   type Chamber, type Vessel, type VesselPath,
 } from "./heartAnatomy";
 
-type HeartModel = "specimen" | "schematic";
+type HeartModel = "specimen" | "atlas" | "schematic";
 
 // Anatomical orientation of the heart in the chest: apex points left, anterior and inferior.
 const HEART_ROTATION = new THREE.Euler(-0.25, -0.35, 0.62);
 const DEFAULT_VIEW = new THREE.Vector3(0, 0.015, 1);
+const HEART_DISTANCE = 6.8;
+const CHEST_DISTANCE = 21;
+
+/** Standard anatomical views. World frame: +X patient's left, +Y superior, +Z anterior. */
+const ANATOMICAL_VIEWS: { key: string; title: string; dir: [number, number, number] }[] = [
+  { key: "A", title: "Anterior (front)", dir: [0, 0.015, 1] },
+  { key: "P", title: "Posterior (back)", dir: [0, 0.015, -1] },
+  { key: "L", title: "Patient's left", dir: [1, 0.015, 0] },
+  { key: "R", title: "Patient's right", dir: [-1, 0.015, 0] },
+  { key: "S", title: "Superior (from above)", dir: [0, 1, 0.02] },
+  { key: "I", title: "Inferior (from below)", dir: [0, -1, 0.02] },
+];
+
+const MODEL_INFO: Record<HeartModel, { label: string; title: string }> = {
+  specimen: { label: "Realistic", title: "Sculpted, textured heart model" },
+  atlas: {
+    label: "Atlas",
+    title: "BodyParts3D anatomical atlas in the chest: every coronary branch is a named FMA structure",
+  },
+  schematic: { label: "Schematic", title: "Schematic heart with epicardial fat and cardiac veins" },
+};
 
 /**
  * Camera direction facing each vessel's perfusion territory: territory centre on the surface (u, v)
@@ -83,12 +106,36 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
   const [available, setAvailable] = useState<boolean | null>(null);
   const [specimenFailed, setSpecimenFailed] = useState(false);
   const [specimenViews, setSpecimenViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
+  const [atlasOk, setAtlasOk] = useState<boolean | null>(null);
+  const [atlasFailed, setAtlasFailed] = useState(false);
+  const [atlasViews, setAtlasViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
+  const [chest, setChest] = useState(true);
+  const [xray, setXray] = useState(false);
+  const [pick, setPick] = useState<AtlasPick | null>(null);
+  const [view, setView] = useState<{ dir: THREE.Vector3; n: number } | null>(null);
+  const [fly, setFly] = useState<{ from: number; to: number; n: number } | null>(null);
 
   useEffect(() => {
     specimenAvailable().then(setAvailable);
+    atlasAvailable().then(setAtlasOk);
   }, []);
   const useSpecimen = available === true && !specimenFailed && model === "specimen";
-  const ready = framesReady && available !== null && (!useSpecimen || specimenViews !== null);
+  const useAtlas = atlasOk === true && !atlasFailed && model === "atlas";
+  const showChest = useAtlas && chest;
+  const ready =
+    framesReady && available !== null && atlasOk !== null &&
+    (!useSpecimen || specimenViews !== null) && (!useAtlas || atlasViews !== null);
+  const models = (["specimen", "atlas", "schematic"] as const).filter(
+    (m) => m === "schematic" || (m === "specimen" ? available && !specimenFailed : atlasOk && !atlasFailed),
+  );
+
+  const chooseModel = (m: HeartModel) => {
+    setModel(m);
+    setPick(null);
+    // Entering the atlas with the chest shown: start outside the chest and fly in to the heart.
+    if (m === "atlas" && chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
+  };
+  const showPick = pick && (pick.vessel === "lm" || pick.vessel === selected) ? pick : null;
 
   useEffect(() => {
     document.body.style.cursor = hovered ? "pointer" : "auto";
@@ -103,14 +150,35 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
         camera={{ position: [0, 0.1, 6.8], fov: 40 }}
         dpr={[1, 2]}
         gl={{ antialias: !fx }}
-        onPointerMissed={() => onSelect(null)}
+        onPointerMissed={() => {
+          onSelect(null);
+          setPick(null);
+        }}
       >
         <color attach="background" args={["#141a26"]} />
         <Lighting />
 
         {/* BVH keeps pointer and label-occlusion raycasts cheap on the dense surface mesh. */}
         <Bvh firstHitOnly>
-          {available === null ? null : useSpecimen ? (
+          {available === null || atlasOk === null ? null : useAtlas ? (
+            <ErrorBoundary fallback={null} onError={() => setAtlasFailed(true)}>
+              <Suspense fallback={null}>
+                <AtlasHeart
+                  probs={probs}
+                  selected={selected}
+                  hovered={hovered}
+                  mode={mode}
+                  xray={xray}
+                  chest={chest}
+                  bpm={beating ? bpm : 0}
+                  onSelect={onSelect}
+                  onHover={setHovered}
+                  onPick={setPick}
+                  onReady={setAtlasViews}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          ) : useSpecimen ? (
             <ErrorBoundary fallback={null} onError={() => setSpecimenFailed(true)}>
               <Suspense fallback={null}>
                 <SpecimenHeart
@@ -140,7 +208,9 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
           )}
         </Bvh>
 
-        <ContactShadows position={[0, -1.85, 0]} opacity={0.6} scale={7} blur={2.6} far={3.5} resolution={512} />
+        {!showChest && (
+          <ContactShadows position={[0, -1.85, 0]} opacity={0.6} scale={7} blur={2.6} far={3.5} resolution={512} />
+        )}
 
         {fx && (
           <EffectComposer multisampling={4}>
@@ -152,9 +222,16 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
         )}
 
         <FirstFrame onReady={() => setFramesReady(true)} />
+        {import.meta.env.DEV && <DevHook />}
         <FitCamera />
-        <CameraRig focus={selected} resetKey={resetKey} views={useSpecimen && specimenViews ? specimenViews : VESSEL_VIEWS} />
-        <OrbitControls enablePan={false} minDistance={3} maxDistance={12} makeDefault />
+        <CameraRig
+          focus={selected}
+          resetKey={resetKey}
+          view={view}
+          fly={fly}
+          views={useAtlas && atlasViews ? atlasViews : useSpecimen && specimenViews ? specimenViews : VESSEL_VIEWS}
+        />
+        <OrbitControls enablePan={false} minDistance={3} maxDistance={showChest ? 26 : 12} makeDefault />
       </Canvas>
 
       {!ready && (
@@ -165,18 +242,18 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
 
       {/* View controls */}
       <div className="absolute left-3 top-3 flex flex-wrap gap-1 text-xs">
-        {available && !specimenFailed && (
+        {models.length > 1 && (
           <div className="mr-1 flex overflow-hidden rounded" role="radiogroup" aria-label="Heart model">
-            {(["specimen", "schematic"] as const).map((m) => (
+            {models.map((m) => (
               <button
                 key={m}
                 role="radio"
                 aria-checked={model === m}
-                onClick={() => setModel(m)}
-                title={m === "specimen" ? "Sculpted, textured heart model" : "Schematic heart with epicardial fat and cardiac veins"}
+                onClick={() => chooseModel(m)}
+                title={MODEL_INFO[m].title}
                 className={`px-2 py-1 ${model === m ? "bg-slate-200 text-slate-900" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
               >
-                {m === "specimen" ? "Realistic" : "Schematic"}
+                {MODEL_INFO[m].label}
               </button>
             ))}
           </div>
@@ -190,6 +267,30 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
             {m === "arteries" ? "Arteries" : "Territories"}
           </button>
         ))}
+        {useAtlas && (
+          <>
+            <button
+              onClick={() => {
+                if (!chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
+                setChest((c) => !c);
+              }}
+              aria-pressed={chest}
+              className={`rounded px-2 py-1 ${chest ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+              title="Show the heart in the chest (BodyParts3D skin, skeleton, diaphragm, airway) with a cutaway window"
+            >
+              Chest
+            </button>
+            <button
+              onClick={() => setXray((x) => !x)}
+              aria-pressed={xray}
+              className={`rounded px-2 py-1 ${xray ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+              title="See-through heart wall: shows the vessels on the back of the heart from the front"
+            >
+              X-ray
+            </button>
+          </>
+        )}
+        {!useAtlas && (
         <button
           onClick={() => setPins((p) => !p)}
           className={`rounded px-2 py-1 ${pins ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
@@ -197,6 +298,7 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
         >
           Anatomy
         </button>
+        )}
         <button
           onClick={() => setBeating((b) => !b)}
           className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
@@ -222,19 +324,67 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
         </button>
       </div>
 
+      {/* Anatomical view buttons */}
+      <div className="absolute bottom-12 right-3 grid grid-cols-3 gap-0.5 text-[10px]" role="group" aria-label="Standard views">
+        {ANATOMICAL_VIEWS.map((v) => (
+          <button
+            key={v.key}
+            title={v.title}
+            onClick={() => setView((cur) => ({ dir: new THREE.Vector3(...v.dir).normalize(), n: (cur?.n ?? 0) + 1 }))}
+            className="h-6 w-6 rounded bg-slate-900/80 font-semibold text-gray-300 hover:bg-slate-700"
+          >
+            {v.key}
+          </button>
+        ))}
+      </div>
+
       {/* Selected vessel info */}
-      {selected && (
-        <div className="absolute right-3 top-12 max-w-[240px] rounded bg-slate-900/90 p-3 text-xs">
-          <div className="font-semibold text-white">
-            {selected.toUpperCase()} · {VESSEL_INFO[selected].name}
-          </div>
-          <div className="mt-1 text-gray-400">Supplies: {VESSEL_INFO[selected].territory}</div>
-          {probs && (
-            <div className="mt-1 text-gray-200">
-              Predicted stenosis probability: <b>{(probs[selected] * 100).toFixed(1)}%</b>
+      {(selected || showPick) && (
+        <div className="absolute right-3 top-12 max-w-[260px] rounded bg-slate-900/90 p-3 text-xs">
+          {selected && (
+            <>
+              <div className="font-semibold text-white">
+                {selected.toUpperCase()} · {VESSEL_INFO[selected].name}
+              </div>
+              <div className="mt-1 text-gray-400">Supplies: {VESSEL_INFO[selected].territory}</div>
+              {probs && (
+                <div className="mt-1 text-gray-200">
+                  Predicted stenosis probability: <b>{(probs[selected] * 100).toFixed(1)}%</b>
+                </div>
+              )}
+            </>
+          )}
+          {showPick && (
+            <div className={`${selected ? "mt-2 border-t border-slate-700 pt-2" : ""} text-gray-300`}>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">Clicked structure</div>
+              <div className="text-white first-letter:uppercase">{showPick.branch.name}</div>
+              <div className="text-gray-500">
+                {showPick.branch.fma} · BodyParts3D {showPick.branch.fj}
+              </div>
+              {showPick.vessel === "lm" ? (
+                <div className="mt-1 text-gray-400">
+                  Left main: not labelled in this dataset, so no model output; shown neutral.
+                </div>
+              ) : (
+                <div className="mt-1 text-gray-400">
+                  Part of {showPick.part} ({showPick.partFma}) → coloured by the {showPick.vessel.toUpperCase()} model.
+                  Branches share their artery's single estimate; position along the artery is not predicted.
+                </div>
+              )}
             </div>
           )}
         </div>
+      )}
+
+      {useAtlas && (
+        <a
+          href={ATLAS_CREDIT.url}
+          target="_blank"
+          rel="noreferrer"
+          className="absolute bottom-3 right-3 max-w-[240px] text-right text-[9px] leading-tight text-gray-500 hover:text-gray-300"
+        >
+          Reference anatomy, not this patient&apos;s imaging. Right dominance assumed. {ATLAS_CREDIT.text}
+        </a>
       )}
 
       {useSpecimen && (
@@ -286,6 +436,15 @@ function Lighting() {
   );
 }
 
+/** Development only: exposes the three.js state as window.__cv for scripted checks. */
+function DevHook() {
+  const state = useThree();
+  useEffect(() => {
+    (window as unknown as { __cv?: unknown }).__cv = state;
+  }, [state]);
+  return null;
+}
+
 /** Reports once the first frame (and so shader compilation) has completed. */
 function FirstFrame({ onReady }: { onReady: () => void }) {
   const frames = useRef(0);
@@ -307,12 +466,24 @@ function FitCamera() {
   return null;
 }
 
-/** Swing the camera round to face the selected vessel's territory, then hand control back. */
-function CameraRig({ focus, resetKey, views }: {
-  focus: Vessel | null; resetKey: number; views: Record<Vessel, THREE.Vector3>;
+function reducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * Swing the camera round to face the selected vessel's territory (or a standard view), and run the
+ * chest-to-heart fly-in, then hand control back to the orbit controls.
+ */
+function CameraRig({ focus, resetKey, views, view, fly }: {
+  focus: Vessel | null;
+  resetKey: number;
+  views: Record<Vessel, THREE.Vector3>;
+  view: { dir: THREE.Vector3; n: number } | null;
+  fly: { from: number; to: number; n: number } | null;
 }) {
   const { camera, controls } = useThree();
   const target = useRef<THREE.Vector3 | null>(null);
+  const flight = useRef<{ from: number; to: number; t: number } | null>(null);
 
   useEffect(() => {
     if (focus) target.current = views[focus].clone();
@@ -320,15 +491,35 @@ function CameraRig({ focus, resetKey, views }: {
   useEffect(() => {
     if (resetKey) target.current = DEFAULT_VIEW.clone().normalize();
   }, [resetKey]);
+  useEffect(() => {
+    if (view) target.current = view.dir.clone();
+  }, [view]);
+  useEffect(() => {
+    if (!fly) return;
+    flight.current = { from: fly.from, to: fly.to, t: 0 };
+    camera.position.setLength(fly.from);
+    // Arrive from a three-quarter view, slightly above, so the chest reads as 3D.
+    target.current = DEFAULT_VIEW.clone().normalize();
+    camera.position.copy(new THREE.Vector3(-0.55, 0.3, 1).normalize().multiplyScalar(fly.from));
+  }, [fly, camera]);
 
   useFrame((_, dt) => {
-    if (!target.current) return;
-    const dist = camera.position.length();
-    const dir = camera.position.clone().normalize();
-    dir.lerp(target.current, Math.min(1, dt * 4)).normalize();
-    camera.position.copy(dir.multiplyScalar(dist));
-    (controls as unknown as { update?: () => void } | null)?.update?.();
-    if (dir.angleTo(target.current) < 0.01) target.current = null;
+    const f = flight.current;
+    if (f) {
+      f.t = Math.min(1, f.t + dt / 2.2);
+      const e = f.t < 0.25 ? 0 : (f.t - 0.25) / 0.75; // pause on the chest, then ease in
+      const s = e * e * (3 - 2 * e);
+      camera.position.setLength(f.from + (f.to - f.from) * s);
+      if (f.t >= 1) flight.current = null;
+    }
+    if (target.current) {
+      const dist = camera.position.length();
+      const dir = camera.position.clone().normalize();
+      dir.lerp(target.current, Math.min(1, dt * (f ? 1.4 : 4))).normalize();
+      camera.position.copy(dir.multiplyScalar(dist));
+      if (!f && dir.angleTo(target.current) < 0.01) target.current = null;
+    }
+    if (f || target.current) (controls as unknown as { update?: () => void } | null)?.update?.();
   });
   return null;
 }
