@@ -1,17 +1,23 @@
 import { Html } from "@react-three/drei";
 import { useState, type RefObject } from "react";
-import type * as THREE from "three";
+import * as THREE from "three";
 import { ANATOMY_LABELS } from "./anatomyLabels";
 
+interface Props {
+  occluders: RefObject<THREE.Object3D>[];
+  /** Pin positions for a different heart model, keyed by label id (defaults to the schematic heart). */
+  positions?: Record<string, [number, number, number]>;
+}
+
 /** Numbered annotation pins; click one to read a short clinical note. */
-export default function AnatomyPins({ occluders }: { occluders: RefObject<THREE.Object3D>[] }) {
+export default function AnatomyPins({ occluders, positions }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       {ANATOMY_LABELS.map((label, i) => (
         <Html
           key={label.id}
-          position={label.position}
+          position={positions?.[label.id] ? new THREE.Vector3(...positions[label.id]) : label.position}
           center
           distanceFactor={5}
           zIndexRange={[20, 10]}

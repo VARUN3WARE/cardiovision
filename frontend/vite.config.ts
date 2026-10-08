@@ -3,6 +3,9 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  // One copy of three for the app, drei, postprocessing and three-mesh-bvh (instanceof checks).
+  resolve: { dedupe: ["three"] },
+  optimizeDeps: { include: ["three", "three-mesh-bvh"] },
   server: {
     port: 5173,
     proxy: {

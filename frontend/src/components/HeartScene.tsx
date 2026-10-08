@@ -1,16 +1,22 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Bvh, ContactShadows, Environment, Html, Lightformer, OrbitControls } from "@react-three/drei";
+import { Bvh, ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
+import ArteryTube, { type ArteryProbs } from "./ArteryTube";
+import ErrorBoundary from "./ErrorBoundary";
+import SpecimenHeart from "./SpecimenHeart";
+import { SPECIMEN_CREDIT, specimenAvailable } from "./specimenAnatomy";
 import {
   ARTERIES, ATRIA, FAT_DARK, FAT_LIGHT, GREAT_VESSELS, MUSCLE_DARK, MUSCLE_LIGHT, NEUTRAL_ARTERY,
   VEINS, VEIN_COLOR, buildChamber, buildMyocardium, makeMuscleNormalMap, makeTissueNormalMap,
   riskColor, surfacePoint, taperedTube, territoryWeights, vesselCurve, vesselRadius,
   type Chamber, type Vessel, type VesselPath,
 } from "./heartAnatomy";
+
+type HeartModel = "specimen" | "schematic";
 
 // Anatomical orientation of the heart in the chest: apex points left, anterior and inferior.
 const HEART_ROTATION = new THREE.Euler(-0.25, -0.35, 0.62);
@@ -38,13 +44,7 @@ function getTextures() {
   return textures;
 }
 
-export type { Vessel };
-
-export interface ArteryProbs {
-  lad: number;
-  lcx: number;
-  rca: number;
-}
+export type { ArteryProbs, Vessel };
 
 export const VESSEL_INFO: Record<Vessel, { name: string; territory: string }> = {
   lad: {
@@ -77,7 +77,18 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
   const [pins, setPins] = useState(false);
   const [hovered, setHovered] = useState<Vessel | null>(null);
   const [resetKey, setResetKey] = useState(0);
-  const [ready, setReady] = useState(false);
+  const [framesReady, setFramesReady] = useState(false);
+  // Realistic model when its file is present and loads; the schematic heart otherwise.
+  const [model, setModel] = useState<HeartModel>("specimen");
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [specimenFailed, setSpecimenFailed] = useState(false);
+  const [specimenViews, setSpecimenViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
+
+  useEffect(() => {
+    specimenAvailable().then(setAvailable);
+  }, []);
+  const useSpecimen = available === true && !specimenFailed && model === "specimen";
+  const ready = framesReady && available !== null && (!useSpecimen || specimenViews !== null);
 
   useEffect(() => {
     document.body.style.cursor = hovered ? "pointer" : "auto";
@@ -99,16 +110,34 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
 
         {/* BVH keeps pointer and label-occlusion raycasts cheap on the dense surface mesh. */}
         <Bvh firstHitOnly>
-          <Heart
-            probs={probs}
-            selected={selected}
-            hovered={hovered}
-            mode={mode}
-            pins={pins}
-            bpm={beating ? bpm : 0}
-            onSelect={onSelect}
-            onHover={setHovered}
-          />
+          {available === null ? null : useSpecimen ? (
+            <ErrorBoundary fallback={null} onError={() => setSpecimenFailed(true)}>
+              <Suspense fallback={null}>
+                <SpecimenHeart
+                  probs={probs}
+                  selected={selected}
+                  hovered={hovered}
+                  mode={mode}
+                  pins={pins}
+                  bpm={beating ? bpm : 0}
+                  onSelect={onSelect}
+                  onHover={setHovered}
+                  onReady={setSpecimenViews}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          ) : (
+            <Heart
+              probs={probs}
+              selected={selected}
+              hovered={hovered}
+              mode={mode}
+              pins={pins}
+              bpm={beating ? bpm : 0}
+              onSelect={onSelect}
+              onHover={setHovered}
+            />
+          )}
         </Bvh>
 
         <ContactShadows position={[0, -1.85, 0]} opacity={0.6} scale={7} blur={2.6} far={3.5} resolution={512} />
@@ -122,9 +151,9 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
           </EffectComposer>
         )}
 
-        <FirstFrame onReady={() => setReady(true)} />
+        <FirstFrame onReady={() => setFramesReady(true)} />
         <FitCamera />
-        <CameraRig focus={selected} resetKey={resetKey} />
+        <CameraRig focus={selected} resetKey={resetKey} views={useSpecimen && specimenViews ? specimenViews : VESSEL_VIEWS} />
         <OrbitControls enablePan={false} minDistance={3} maxDistance={12} makeDefault />
       </Canvas>
 
@@ -136,6 +165,22 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
 
       {/* View controls */}
       <div className="absolute left-3 top-3 flex flex-wrap gap-1 text-xs">
+        {available && !specimenFailed && (
+          <div className="mr-1 flex overflow-hidden rounded" role="radiogroup" aria-label="Heart model">
+            {(["specimen", "schematic"] as const).map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={model === m}
+                onClick={() => setModel(m)}
+                title={m === "specimen" ? "Sculpted, textured heart model" : "Schematic heart with epicardial fat and cardiac veins"}
+                className={`px-2 py-1 ${model === m ? "bg-slate-200 text-slate-900" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+              >
+                {m === "specimen" ? "Realistic" : "Schematic"}
+              </button>
+            ))}
+          </div>
+        )}
         {(["arteries", "territories"] as const).map((m) => (
           <button
             key={m}
@@ -190,6 +235,17 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
             </div>
           )}
         </div>
+      )}
+
+      {useSpecimen && (
+        <a
+          href={SPECIMEN_CREDIT.url}
+          target="_blank"
+          rel="noreferrer"
+          className="absolute bottom-3 right-3 max-w-[220px] text-right text-[9px] leading-tight text-gray-500 hover:text-gray-300"
+        >
+          Heart model: “{SPECIMEN_CREDIT.title}” by {SPECIMEN_CREDIT.author}, {SPECIMEN_CREDIT.license}
+        </a>
       )}
 
       {/* Legend */}
@@ -252,13 +308,15 @@ function FitCamera() {
 }
 
 /** Swing the camera round to face the selected vessel's territory, then hand control back. */
-function CameraRig({ focus, resetKey }: { focus: Vessel | null; resetKey: number }) {
+function CameraRig({ focus, resetKey, views }: {
+  focus: Vessel | null; resetKey: number; views: Record<Vessel, THREE.Vector3>;
+}) {
   const { camera, controls } = useThree();
   const target = useRef<THREE.Vector3 | null>(null);
 
   useEffect(() => {
-    if (focus) target.current = VESSEL_VIEWS[focus].clone();
-  }, [focus]);
+    if (focus) target.current = views[focus].clone();
+  }, [focus, views]);
   useEffect(() => {
     if (resetKey) target.current = DEFAULT_VIEW.clone().normalize();
   }, [resetKey]);
@@ -515,101 +573,24 @@ interface ArteryProps {
   onHover: (v: Vessel | null) => void;
 }
 
-function Artery({ seg, probs, selected, hovered, occluder, onSelect, onHover }: ArteryProps) {
-  const { geometry, labelPos, tip, tipRadius } = useMemo(() => {
+/** A schematic-heart artery: projects the (u, v) path onto the analytic surface. */
+function Artery({ seg, occluder, ...rest }: ArteryProps) {
+  const { curve, radiusAt, labelPos } = useMemo(() => {
     const curve = vesselCurve(seg);
-    const radius = vesselRadius(seg);
-    return {
-      geometry: taperedTube(curve, radius, 180, 14),
-      // Lift the label off the vessel so it isn't occluded by its own tube.
-      labelPos: (() => {
-        const p = curve.getPoint(0.3);
-        const out = new THREE.Vector3(p.x, 0, p.z).normalize().multiplyScalar(0.18);
-        return p.add(out);
-      })(),
-      tip: curve.getPoint(1),
-      tipRadius: radius(1),
-    };
+    // Lift the label off the vessel so it isn't occluded by its own tube.
+    const p = curve.getPoint(0.3);
+    const labelPos = p.clone().add(new THREE.Vector3(p.x, 0, p.z).normalize().multiplyScalar(0.18));
+    return { curve, radiusAt: vesselRadius(seg), labelPos };
   }, [seg]);
-  const material = useRef<THREE.MeshPhysicalMaterial>(null);
-  const capMaterial = useRef<THREE.MeshPhysicalMaterial>(null);
-
-  const vessel = seg.vessel === "lm" || seg.vessel === "vein" ? null : seg.vessel;
-  const p = probs
-    ? vessel ? probs[vessel] : Math.max(probs.lad, probs.lcx) // left main feeds LAD + LCX
-    : null;
-  const color = useMemo(() => (p === null ? NEUTRAL_ARTERY.clone() : riskColor(p)), [p]);
-  const isSelected = vessel !== null && vessel === selected;
-  const dimmed = selected !== null && !isSelected;
-
-  useFrame(({ clock }) => {
-    // Selected vessel pulses bright enough to catch the bloom pass.
-    const glow = dimmed
-      ? 0.04
-      : isSelected
-        ? 2.2 + 1.6 * Math.sin(clock.elapsedTime * 4)
-        : vessel && vessel === hovered
-          ? 1.0
-          : p !== null && p >= 0.66
-            ? 0.5
-            : 0.2;
-    if (material.current) material.current.emissiveIntensity = glow;
-    if (capMaterial.current) capMaterial.current.emissiveIntensity = glow;
-  });
-
-  const handlers = vessel
-    ? {
-        onClick: (e: { stopPropagation: () => void }) => {
-          e.stopPropagation();
-          onSelect(vessel === selected ? null : vessel);
-        },
-        onPointerOver: (e: { stopPropagation: () => void }) => {
-          e.stopPropagation();
-          onHover(vessel);
-        },
-        onPointerOut: () => onHover(null),
-      }
-    : {};
-
-  const materialProps = {
-    color,
-    emissive: color,
-    roughness: 0.28,
-    clearcoat: 1,
-    clearcoatRoughness: 0.15,
-    transparent: dimmed,
-    opacity: dimmed ? 0.4 : 1,
-  };
-
   return (
-    <group>
-      <mesh geometry={geometry} {...handlers}>
-        <meshPhysicalMaterial ref={material} {...materialProps} />
-      </mesh>
-      {/* Rounded distal end */}
-      <mesh position={tip} {...handlers}>
-        <sphereGeometry args={[tipRadius, 10, 8]} />
-        <meshPhysicalMaterial ref={capMaterial} {...materialProps} />
-      </mesh>
-      {seg.label && vessel && (
-        <Html position={labelPos} center distanceFactor={5} zIndexRange={[10, 0]} occlude={[occluder]}>
-          <button
-            // Stop the DOM event reaching the canvas, which would treat it as a missed click.
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(vessel === selected ? null : vessel);
-            }}
-            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold shadow ${
-              isSelected ? "bg-white text-slate-900" : "bg-slate-900/85 text-white"
-            }`}
-            style={{ borderColor: `#${color.getHexString()}` }}
-          >
-            {seg.name}
-            {p !== null && <span className="ml-1 font-normal opacity-80">{(p * 100).toFixed(0)}%</span>}
-          </button>
-        </Html>
-      )}
-    </group>
+    <ArteryTube
+      vessel={seg.vessel === "lm" || seg.vessel === "vein" ? null : seg.vessel}
+      name={seg.name}
+      curve={curve}
+      radiusAt={radiusAt}
+      labelPos={seg.label ? labelPos : null}
+      occluders={[occluder]}
+      {...rest}
+    />
   );
 }

@@ -3,6 +3,7 @@ import { Component, type ReactNode } from "react";
 interface Props {
   fallback: ReactNode;
   children: ReactNode;
+  onError?: (error: unknown) => void;
 }
 
 /** Contains rendering failures (e.g. no WebGL) so the rest of the app keeps working. */
@@ -15,6 +16,7 @@ export default class ErrorBoundary extends Component<Props, { failed: boolean }>
 
   componentDidCatch(error: unknown) {
     console.error("Rendering error contained by ErrorBoundary:", error);
+    this.props.onError?.(error);
   }
 
   render() {
