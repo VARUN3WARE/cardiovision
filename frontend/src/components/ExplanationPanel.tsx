@@ -1,5 +1,5 @@
 import type { ExplainResponse, FeaturesResponse, MetricsResponse, Target } from "../api/client";
-import { FEATURE_LABELS, formatFeatureValue } from "../featureLabels";
+import { FEATURE_GROUPS, FEATURE_LABELS, formatFeatureValue } from "../featureLabels";
 import { formatPct, reliability } from "../risk";
 import type { Vessel } from "./HeartScene";
 
@@ -154,7 +154,66 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
           </div>
         </details>
       </div>
+
+      <PhysiologicalBreakdown rows={rows} />
     </div>
+  );
+}
+
+/** Every measurement (and derived score) grouped by body system, with its value and contribution. */
+function PhysiologicalBreakdown({ rows }: { rows: Row[] }) {
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  const used = new Set<string>();
+  const groups = FEATURE_GROUPS.map(([title, names]) => {
+    const items = names.map((n) => byName.get(n)).filter((r): r is Row => !!r);
+    items.forEach((r) => used.add(r.name));
+    return { title, items };
+  });
+  groups.push({ title: "Derived clinical scores", items: rows.filter((r) => r.derived && !used.has(r.name)) });
+  const other = rows.filter((r) => !r.derived && !used.has(r.name) && !groups.some((g) => g.items.includes(r)));
+  if (other.length) groups.push({ title: "Other", items: other });
+
+  return (
+    <details className="rounded border border-slate-700 bg-slate-900/40 p-2 text-[11px]">
+      <summary className="cursor-pointer font-semibold text-gray-300">
+        Physiological breakdown: all {rows.length} measurements and their contribution
+      </summary>
+      <div className="mt-2 space-y-2">
+        {groups.filter((g) => g.items.length).map((g) => (
+          <div key={g.title}>
+            <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-300">{g.title}</div>
+            <ul className="space-y-0.5">
+              {[...g.items].sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap)).map((r) => {
+                const w = Math.min(Math.abs(r.shap) / BAR_SCALE, 1) * 50;
+                const up = r.shap >= 0;
+                return (
+                  <li key={r.name} className={`grid grid-cols-[minmax(0,1fr)_auto_64px_52px] items-center gap-2 ${r.imputed ? "opacity-60" : ""}`}>
+                    <span className="truncate text-gray-300" title={r.derived ? `Calculated from: ${r.sources.join(", ")}` : r.label}>
+                      {r.label}
+                    </span>
+                    <span className="text-right text-gray-400">{r.imputed ? <i>typical</i> : formatFeatureValue(r.name, r.value)}</span>
+                    <span className="relative h-1.5 rounded bg-slate-700/60" aria-hidden>
+                      <span className="absolute left-1/2 top-0 h-1.5 w-px bg-slate-500" />
+                      <span
+                        className={`absolute top-0 h-1.5 ${up ? "rounded-r bg-red-500" : "rounded-l bg-sky-500"}`}
+                        style={up ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }}
+                      />
+                    </span>
+                    <span className={`text-right ${Math.abs(r.shap) < 0.01 ? "text-gray-600" : up ? "text-red-300" : "text-sky-300"}`}>
+                      ×{Math.exp(r.shap).toFixed(2)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+        <div className="text-[10px] text-gray-500">
+          ×odds = factor by which this finding multiplies the odds of the selected outcome; ×1.00 = no effect.
+          Greyed rows were not entered and use a typical cohort value.
+        </div>
+      </div>
+    </details>
   );
 }
 

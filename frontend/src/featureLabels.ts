@@ -106,3 +106,19 @@ export function formatFeatureValue(name: string, value: number): string {
   const v = Number.isInteger(value) ? String(value) : value.toFixed(1);
   return unit ? `${v} ${unit}` : v;
 }
+
+// Body-system groups for the physiological breakdown (dataset column names).
+export const FEATURE_GROUPS: [string, string[]][] = [
+  ["Demographics", ["Age", "Sex", "Weight", "Length", "BMI"]],
+  ["Symptoms & examination", [
+    "Typical Chest Pain", "Atypical", "Nonanginal", "Exertional CP", "LowTH Ang", "Dyspnea", "Function Class",
+    "BP", "PR", "Edema", "Weak Peripheral Pulse", "Lung rales", "Systolic Murmur", "Diastolic Murmur",
+  ]],
+  ["History & risk factors", [
+    "DM", "HTN", "Current Smoker", "EX-Smoker", "FH", "Obesity", "DLP", "CRF", "CVA", "Airway disease",
+    "Thyroid Disease", "CHF",
+  ]],
+  ["ECG", ["Q Wave", "St Elevation", "St Depression", "Tinversion", "LVH", "Poor R Progression", "BBB"]],
+  ["Echocardiography", ["EF-TTE", "Region RWMA", "VHD"]],
+  ["Laboratory", ["FBS", "CR", "TG", "LDL", "HDL", "BUN", "ESR", "HB", "K", "Na", "WBC", "Lymph", "Neut", "PLT"]],
+];
