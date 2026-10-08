@@ -256,7 +256,7 @@ export default function HeartScene({
       )}
 
       {/* View controls */}
-      <div className="absolute left-3 top-3 flex flex-wrap gap-1 text-xs">
+      <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1 text-xs">
         {models.length > 1 && (
           <div className="mr-1 flex overflow-hidden rounded" role="radiogroup" aria-label="Heart model">
             {models.map((m) => (
@@ -433,7 +433,7 @@ export default function HeartScene({
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-3 left-3 w-60 text-[10px] text-gray-400">
+      <div className="absolute bottom-3 left-3 z-20 w-60 text-[10px] text-gray-400">
         <MapSemantics rwma={rwma} />
         {mode === "territories" && (
           <div className="mb-2 rounded bg-slate-900/80 p-1.5 text-gray-300">

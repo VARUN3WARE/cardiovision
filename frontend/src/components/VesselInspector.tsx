@@ -41,7 +41,7 @@ export default function VesselInspector({ vessel, result, metrics, pick, onClose
     <div
       role="dialog"
       aria-label={`${vessel.toUpperCase()} details`}
-      className="absolute right-3 top-12 z-10 max-h-[calc(100%-7rem)] w-[270px] overflow-auto rounded bg-slate-900/95 p-3 text-xs shadow-lg"
+      className="absolute right-3 top-12 z-20 max-h-[calc(100%-7rem)] w-[270px] overflow-auto rounded bg-slate-900/95 p-3 text-xs shadow-lg"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-start justify-between gap-2">
