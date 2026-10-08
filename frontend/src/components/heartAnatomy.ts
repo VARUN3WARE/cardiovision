@@ -26,7 +26,8 @@
 import * as THREE from "three";
 import { BAND_COLOR, getVesselCuts } from "../risk";
 
-export type Vessel = "lad" | "lcx" | "rca";
+import type { Vessel } from "../anatomy/registry";
+export type { Vessel };
 
 const APEX_Y = -1.15;
 const BASE_Y = 0.5;

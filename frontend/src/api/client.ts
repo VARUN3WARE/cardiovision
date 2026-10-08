@@ -1,7 +1,9 @@
 // Typed client for the CardioVision API (backend/app/main.py).
 
-export type Target = "cad" | "lad" | "lcx" | "rca";
-export const TARGETS: Target[] = ["cad", "lad", "lcx", "rca"];
+import { MODEL_TABS, type Vessel } from "../anatomy/registry";
+
+export type Target = "cad" | Vessel;
+export const TARGETS: readonly Target[] = MODEL_TABS;
 
 export interface VesselProbability {
   lad: number;

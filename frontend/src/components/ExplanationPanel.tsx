@@ -1,6 +1,7 @@
 import type { ExplainResponse, FeaturesResponse, MetricsResponse, Target } from "../api/client";
 import { FEATURE_GROUPS, FEATURE_LABELS, formatFeatureValue } from "../featureLabels";
 import { formatPct, reliability } from "../risk";
+import { MODEL_TABS, VESSEL } from "../anatomy/registry";
 import type { Vessel } from "./HeartScene";
 
 interface Props {
@@ -71,7 +72,7 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
   return (
     <div className="space-y-3">
       <div role="tablist" aria-label="Model" className="flex gap-1 text-xs">
-        {(["cad", "lad", "lcx", "rca"] as const).map((t) => (
+        {MODEL_TABS.map((t) => (
           <button
             key={t}
             role="tab"
@@ -79,7 +80,7 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
             onClick={() => onSelect(t === "cad" ? null : t)}
             className={`flex-1 rounded px-2 py-1 ${model === t ? "bg-red-700 text-white" : "bg-slate-900 text-gray-300 hover:bg-slate-700"}`}
           >
-            {t === "cad" ? "Overall" : t.toUpperCase()}
+            {t === "cad" ? "Overall" : VESSEL[t].label}
           </button>
         ))}
       </div>

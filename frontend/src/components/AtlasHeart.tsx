@@ -12,7 +12,8 @@ import {
   type AtlasBranch, type AtlasPart, type PreparedAtlasHeart,
 } from "./atlasAnatomy";
 import { patchMaterial } from "./atlasMaterials";
-import { NEUTRAL_ARTERY, fbm, riskColor, type Vessel } from "./heartAnatomy";
+import { NEUTRAL_ARTERY, fbm, riskColor } from "./heartAnatomy";
+import { UNMODELLED, VESSEL, VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
 
 /** Which chest layers to draw around the heart. */
 export interface ChestLayers {
@@ -46,8 +47,8 @@ interface Props {
   onReady: (views: Record<Vessel, THREE.Vector3>) => void;
 }
 
-const TARGETS: Vessel[] = ["lad", "lcx", "rca"];
-const LABEL: Record<Vessel, string> = { lad: "LAD", lcx: "LCX", rca: "RCA" };
+const N = VESSEL_IDS.length;
+const label = (v: Vessel) => VESSEL[v].label;
 
 const MUSCLE_DEEP = new THREE.Color("#5c1d1a");
 const MUSCLE = new THREE.Color("#8e3a31");
@@ -163,13 +164,13 @@ export default function AtlasHeart(props: Props) {
           {atlas.parts.filter((p) => p.layer === "coronary").map((p) => (
             <Coronary key={p.key} part={p} probs={probs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onPick={onPick} />
           ))}
-          {TARGETS.map((v) => {
+          {VESSEL_IDS.map((v) => {
             const p = probs ? probs[v] : null;
             return (
               <VesselLabel
                 key={v}
                 vessel={v}
-                name={LABEL[v]}
+                name={label(v)}
                 position={atlas.labels[v]}
                 p={p}
                 color={p === null ? NEUTRAL_ARTERY : riskColor(p)}
@@ -238,11 +239,11 @@ function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSele
       const fat = atlas.fat[i];
       if (probs && mode === "territories") {
         tint.setRGB(0, 0, 0);
-        TARGETS.forEach((t, k) => tint.add(riskColor(probs[t], tmp).multiplyScalar(T[i * 3 + k])));
+        VESSEL_IDS.forEach((t, k) => tint.add(riskColor(probs[t], tmp).multiplyScalar(T[i * N + k])));
         c.lerp(tint, 0.74 - 0.2 * fat);
       } else if (focus) {
         tint.copy(probs ? riskColor(probs[focus], tmp) : NEUTRAL_ARTERY);
-        c.lerp(tint, 0.5 * Math.max(0, (T[i * 3 + TARGETS.indexOf(focus)] - 0.35) / 0.65));
+        c.lerp(tint, 0.5 * Math.max(0, (T[i * N + VESSEL_IDS.indexOf(focus)] - 0.35) / 0.65));
       }
       color.setXYZ(i, c.r, c.g, c.b);
     }
@@ -263,7 +264,7 @@ function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSele
 
   const supplier = (face: THREE.Face) => {
     const T = atlas.territory;
-    return TARGETS[[0, 1, 2].reduce((a, b) => (T[face.a * 3 + a] >= T[face.a * 3 + b] ? a : b))];
+    return VESSEL_IDS[VESSEL_IDS.reduce((best, _, k) => (T[face.a * N + k] > T[face.a * N + best] ? k : best), 0)];
   };
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -272,7 +273,7 @@ function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSele
     onPick(null);
     onSelect(v === selected ? null : v);
   };
-  const tip = useTip((e) => (e.face ? { text: "Ventricular wall", sub: `Usually supplied by the ${LABEL[supplier(e.face)]} · click to inspect` } : null));
+  const tip = useTip((e) => (e.face ? { text: "Ventricular wall", sub: `Usually supplied by the ${label(supplier(e.face))} · click to inspect` } : null));
 
   return (
     <BvhMesh
@@ -341,7 +342,9 @@ interface CoronaryProps {
 
 /** One coronary tree (all its named branches in one mesh), coloured by its vessel's model. */
 function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }: CoronaryProps) {
-  const vessel = part.vessel === "lm" || !part.vessel ? null : part.vessel;
+  // Model output shown by this tree (registry); trees without one (the left main) stay neutral.
+  const vessel = VESSELS.find((v) => v.atlasPart === part.key)?.id ?? null;
+  const unmodelled = UNMODELLED.find((u) => u.atlasPart === part.key);
   const { material } = useVesselMaterial(vessel, probs, selected, hovered);
 
   const branchAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => branchName(part, e);
@@ -350,7 +353,7 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
     if (!b) return null;
     return {
       text: b.name,
-      sub: vessel ? `${b.fma} · coloured by the ${LABEL[vessel]} model` : `${b.fma} · not labelled in the dataset`,
+      sub: vessel ? `${b.fma} · coloured by the ${label(vessel)} model` : `${b.fma} · not labelled in the dataset`,
     };
   });
 
@@ -364,7 +367,7 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
         const branch = branchAt(e);
         if (!vessel) {
           // Left main: shown for anatomy, but the dataset has no left-main label to colour it by.
-          if (branch) onPick({ vessel: "lm", part: part.label, partFma: part.fma, branch });
+          if (branch && unmodelled) onPick({ vessel: unmodelled.id, part: part.label, partFma: part.fma, branch });
           return;
         }
         const deselect = vessel === selected;

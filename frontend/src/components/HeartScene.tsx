@@ -9,6 +9,7 @@ import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import AtlasHeart, { type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import VesselInspector from "./VesselInspector";
+import { VESSEL_IDS } from "../anatomy/registry";
 import type { ExplainResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
@@ -722,7 +723,7 @@ function Myocardium({ meshRef, probs, selected, focus, mode, onSelect }: Myocard
       const w = territoryWeights(param.getX(i), param.getY(i));
       if (probs && mode === "territories") {
         tint.setRGB(0, 0, 0);
-        for (const v of ["lad", "lcx", "rca"] as const) {
+        for (const v of VESSEL_IDS) {
           tint.add(riskColor(probs[v], tmp).multiplyScalar(w[v]));
         }
         c.lerp(tint, 0.62 - 0.25 * f);

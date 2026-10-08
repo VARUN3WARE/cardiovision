@@ -3,25 +3,8 @@ import type { ExplainResponse, MetricsResponse } from "../api/client";
 import { FEATURE_LABELS, formatFeatureValue } from "../featureLabels";
 import { BAND_COLOR, BAND_STYLE, formatPct, reliability, vesselBand } from "../risk";
 import type { AtlasPick } from "./AtlasHeart";
-import type { Vessel } from "./heartAnatomy";
+import { VESSEL, type Vessel } from "../anatomy/registry";
 
-export const VESSEL_INFO: Record<Vessel, { name: string; territory: string; aha: number[] }> = {
-  lad: {
-    name: "Left Anterior Descending",
-    territory: "Anterior LV wall, anterior two-thirds of the septum, apex",
-    aha: [1, 2, 7, 8, 13, 14, 17],
-  },
-  lcx: {
-    name: "Left Circumflex",
-    territory: "Lateral and posterolateral LV wall",
-    aha: [5, 6, 11, 12, 16],
-  },
-  rca: {
-    name: "Right Coronary Artery",
-    territory: "Right ventricle, inferior LV wall, posterior septum (via PDA)",
-    aha: [3, 4, 9, 10, 15],
-  },
-};
 
 interface Props {
   vessel: Vessel;
@@ -41,7 +24,7 @@ export default function VesselInspector({ vessel, result, metrics, pick, onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const info = VESSEL_INFO[vessel];
+  const info = VESSEL[vessel];
   const r = result?.results[vessel];
   const m = metrics?.metrics[vessel];
   const band = r ? vesselBand(r.probability) : null;
@@ -63,7 +46,7 @@ export default function VesselInspector({ vessel, result, metrics, pick, onClose
     >
       <div className="flex items-start justify-between gap-2">
         <div className="font-semibold text-white">
-          {vessel.toUpperCase()} · {info.name}
+          {info.label} · {info.name}
         </div>
         <button onClick={onClose} aria-label="Close" title="Close (Esc)" className="-mt-1 px-1 text-base leading-none text-gray-400 hover:text-white">
           ×

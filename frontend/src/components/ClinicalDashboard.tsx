@@ -2,6 +2,7 @@ import type { ExplainResponse, MetricsResponse, Target, TargetMetrics } from "..
 import { FIELD_LABEL } from "../fieldSpec";
 import { BAND_COLOR, bandStyle, formatPct, reliability, type Band } from "../risk";
 import Bullseye from "./Bullseye";
+import { VESSELS } from "../anatomy/registry";
 import type { Preset } from "./FeatureInput";
 import type { Vessel } from "./HeartScene";
 
@@ -52,7 +53,7 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
       <div>
         <div className="mb-1 text-xs text-gray-400">Probability of ≥50% stenosis per vessel</div>
         <div className="grid grid-cols-3 gap-2">
-          {(["lad", "lcx", "rca"] as const).map((v) => {
+          {VESSELS.map(({ id: v, label }) => {
             const r = result.results[v];
             const style = bandStyle(r.band);
             const rel = m ? reliability(m[v].cv.roc_auc.mean) : null;
@@ -65,7 +66,7 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
                 className={`rounded border p-2 text-center transition ${selected === v ? "border-white bg-slate-700" : "bg-slate-900 hover:bg-slate-700"} ${
                   rel?.weak ? "border-dashed border-slate-500" : "border-transparent"}`}
               >
-                <div className="text-xs uppercase text-gray-300">{v}</div>
+                <div className="text-xs uppercase text-gray-300">{label}</div>
                 {/* Same band colour as this artery in the 3D view. */}
                 <div className="text-xl font-bold" style={{ color: BAND_COLOR[r.band as Band] }}>{formatPct(r.probability)}</div>
                 <div className={`text-[10px] ${style.text}`}>{r.band}</div>

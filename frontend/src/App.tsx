@@ -10,6 +10,7 @@ import {
 } from "./api/client";
 import { DEMO_PATIENT, toPayload, validate, type FormValues } from "./fieldSpec";
 import { configureBands, formatPct } from "./risk";
+import { VESSELS } from "./anatomy/registry";
 
 type ApiStatus = "checking" | "online" | "models_missing" | "offline";
 
@@ -237,9 +238,9 @@ function HeartFallback({ result }: { result: ExplainResponse | null }) {
       <div>3D view unavailable on this device. Estimates and explanations still work.</div>
       {result && (
         <div className="flex gap-2">
-          {(["lad", "lcx", "rca"] as const).map((v) => (
-            <span key={v} className="rounded bg-slate-900 px-2 py-1 text-xs text-gray-200">
-              {v.toUpperCase()} {formatPct(result.results[v].probability)}
+          {VESSELS.map((v) => (
+            <span key={v.id} className="rounded bg-slate-900 px-2 py-1 text-xs text-gray-200">
+              {v.label} {formatPct(result.results[v.id].probability)}
             </span>
           ))}
         </div>

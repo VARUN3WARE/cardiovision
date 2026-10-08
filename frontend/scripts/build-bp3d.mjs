@@ -4,9 +4,9 @@
 // Per element file: convert to the glTF frame, weld, drop small loose fragments, simplify (meshoptimizer),
 // recompute smooth normals. Files are then merged into one mesh per part (one draw call each); a per-vertex
 // `_BRANCH` index names the element (FMA concept + BodyParts3D file id) so a click resolves to the exact
-// branch. The ventricular wall carries `_VDIST`: distance (0.1 mm units) to the nearest LAD / LCX / RCA
-// vertex, from which the app derives illustrative perfusion territories, and to the nearest main groove
-// vessel (where epicardial fat lies).
+// branch. The ventricular wall carries one `_D_<PART>` attribute per scored coronary tree (distance in 0.1 mm
+// to its nearest vertex), from which the app derives illustrative perfusion territories, and `_D_GROOVE`
+// (distance to the nearest main groove vessel, where epicardial fat lies).
 //
 // BodyParts3D, (c) The Database Center for Life Science, licensed under CC Attribution 4.0 International.
 
@@ -247,23 +247,22 @@ async function buildGroup(name, group) {
   }
 
   // Ventricular wall: distance to each scored coronary tree (territory shading at runtime) and to the
-  // groove vessels (epicardial fat).
+  // groove vessels (epicardial fat). Scored trees are the coronary parts with a model output.
   if (built.ventricles) {
     const w = built.ventricles;
+    const scored = group.parts.filter((p) => p.layer === "coronary" && p.vessel && p.vessel !== "lm").map((p) => p.key);
     const groove = [];
-    for (const key of ["lad", "lcx", "rca", "lm", "cardiac_veins"]) {
-      const b = built[key];
+    for (const b of Object.values(built).filter((b) => ["coronary", "cardiac_vein"].includes(b.part.layer))) {
       for (let i = 0; i < b.branch.length; i++) {
         if (GROOVE_FMA.has(b.branches[b.branch[i]].fma)) groove.push(b.pos[3 * i], b.pos[3 * i + 1], b.pos[3 * i + 2]);
       }
     }
-    const clouds = [built.lad.pos, built.lcx.pos, built.rca.pos, new Float32Array(groove)];
-    const vdist = new Uint16Array((w.pos.length / 3) * 4);
-    clouds.forEach((cloud, k) => {
+    const clouds = { ...Object.fromEntries(scored.map((k) => [k, built[k].pos])), groove: new Float32Array(groove) };
+    w.dist = {};
+    for (const [key, cloud] of Object.entries(clouds)) {
       const d = nearestDistance(w.pos, cloud);
-      for (let i = 0; i < d.length; i++) vdist[i * 4 + k] = Math.min(65535, Math.round(d[i] * 1e4)); // 0.1 mm
-    });
-    w.vdist = vdist;
+      w.dist[key] = Uint16Array.from(d, (x) => Math.min(65535, Math.round(x * 1e4))); // 0.1 mm
+    }
   }
 
   for (const b of Object.values(built)) {
@@ -275,7 +274,9 @@ async function buildGroup(name, group) {
       .setAttribute("NORMAL", doc.createAccessor().setType("VEC3").setArray(normals(b)).setBuffer(buffer))
       .setAttribute("_BRANCH", doc.createAccessor().setType("SCALAR").setArray(b.branch).setBuffer(buffer))
       .setMaterial(doc.createMaterial(part.layer));
-    if (b.vdist) prim.setAttribute("_VDIST", doc.createAccessor().setType("VEC4").setArray(b.vdist).setBuffer(buffer));
+    for (const [key, arr] of Object.entries(b.dist ?? {})) {
+      prim.setAttribute(`_D_${key.toUpperCase()}`, doc.createAccessor().setType("SCALAR").setArray(arr).setBuffer(buffer));
+    }
     const mesh = doc.createMesh(part.key).addPrimitive(prim);
     const extras = { key: part.key, layer: part.layer, fma: part.fma, label: part.label, branches: b.branches };
     if (part.vessel) extras.vessel = part.vessel;

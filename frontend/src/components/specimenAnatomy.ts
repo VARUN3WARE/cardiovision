@@ -11,7 +11,7 @@
  */
 import * as THREE from "three";
 import { MeshBVH, type HitPointInfo } from "three-mesh-bvh";
-import type { Vessel } from "./heartAnatomy";
+import { VESSEL_IDS, type Vessel } from "../anatomy/registry";
 
 export const SPECIMEN_URL = "/models/heart.glb";
 export const SPECIMEN_CREDIT = {
@@ -145,7 +145,7 @@ export interface PreparedSpecimen {
   material: THREE.Material;
   center: THREE.Vector3; // bounding-box centre (display pivot)
   vessels: { seg: SpecimenVessel; curve: THREE.CatmullRomCurve3; radiusAt: (t: number) => number; labelPos: THREE.Vector3 }[];
-  /** Per vertex: territory weights for lad, lcx, rca and a ventricle mask (0..1). */
+  /** Per vertex (stride TERRITORY_STRIDE): territory weight per registry artery, then a ventricle mask (0..1). */
   territory: Float32Array;
   /** Camera direction (unit, display frame) that faces each vessel's territory. */
   views: Record<Vessel, THREE.Vector3>;
@@ -240,31 +240,33 @@ function snapToSurface(bvh: MeshBVH, geometry: THREE.BufferGeometry, points: P3[
 }
 
 const TERRITORY_SIGMA = 0.07; // model units; softness of the boundaries between territories
-const TARGETS: Vessel[] = ["lad", "lcx", "rca"];
+const N = VESSEL_IDS.length;
+/** Per vertex: one territory weight per registry artery, then the ventricle mask. */
+export const TERRITORY_STRIDE = N + 1;
 
 /**
  * Perfusion territories by proximity: each ventricular vertex belongs mostly to the nearest
  * artery tree (soft-min over squared distance), masked to the ventricles below the AV groove.
  */
 function computeTerritories(geometry: THREE.BufferGeometry, vessels: PreparedSpecimen["vessels"]): Float32Array {
-  const samples: Record<Vessel, THREE.Vector3[]> = { lad: [], lcx: [], rca: [] };
+  const samples = Object.fromEntries(VESSEL_IDS.map((v) => [v, [] as THREE.Vector3[]])) as Record<Vessel, THREE.Vector3[]>;
   for (const v of vessels) {
     if (v.seg.vessel === "lm") continue;
     for (const p of v.curve.getSpacedPoints(Math.ceil(v.curve.getLength() / 0.02))) samples[v.seg.vessel].push(p);
   }
   const groove = grooveHeight();
   const pos = geometry.getAttribute("position");
-  const out = new Float32Array(pos.count * 4);
+  const out = new Float32Array(pos.count * TERRITORY_STRIDE);
   const p = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     p.fromBufferAttribute(pos, i);
-    const d2 = TARGETS.map((t) => samples[t].reduce((m, s) => Math.min(m, s.distanceToSquared(p)), Infinity));
+    const d2 = VESSEL_IDS.map((t) => samples[t].reduce((m, s) => Math.min(m, s.distanceToSquared(p)), Infinity));
     const dmin = Math.min(...d2);
     const w = d2.map((d) => Math.exp(-(d - dmin) / (TERRITORY_SIGMA * TERRITORY_SIGMA)));
-    const sum = w[0] + w[1] + w[2];
+    const sum = w.reduce((a, b) => a + b, 0);
     const gy = groove(p);
     const mask = smoothstep(gy + 0.035, gy - 0.025, p.y);
-    out.set([w[0] / sum, w[1] / sum, w[2] / sum, mask], i * 4);
+    out.set([...w.map((x) => x / sum), mask], i * TERRITORY_STRIDE);
   }
   return out;
 }
@@ -293,20 +295,20 @@ function smoothstep(e0: number, e1: number, x: number) {
 /** Camera directions that face the centroid of each vessel's (ventricular) territory. */
 function vesselViews(geometry: THREE.BufferGeometry, territory: Float32Array, center: THREE.Vector3) {
   const pos = geometry.getAttribute("position");
-  const sums = TARGETS.map(() => new THREE.Vector3());
-  const counts = [0, 0, 0];
+  const sums = VESSEL_IDS.map(() => new THREE.Vector3());
+  const counts = VESSEL_IDS.map(() => 0);
   const p = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
-    if (territory[i * 4 + 3] < 0.5) continue;
+    if (territory[i * TERRITORY_STRIDE + N] < 0.5) continue;
     p.fromBufferAttribute(pos, i);
-    TARGETS.forEach((_, k) => {
-      if (territory[i * 4 + k] > 0.6) {
+    VESSEL_IDS.forEach((_, k) => {
+      if (territory[i * TERRITORY_STRIDE + k] > 0.6) {
         sums[k].add(p);
         counts[k]++;
       }
     });
   }
-  return Object.fromEntries(TARGETS.map((t, k) => {
+  return Object.fromEntries(VESSEL_IDS.map((t, k) => {
     const dir = sums[k].divideScalar(Math.max(1, counts[k])).sub(center);
     dir.normalize();
     // Face the territory horizontally, from a gently elevated viewpoint.

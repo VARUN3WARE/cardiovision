@@ -1,17 +1,12 @@
 import { BAND_COLOR, vesselBand } from "../risk";
 import type { ArteryProbs } from "./ArteryTube";
-import type { Vessel } from "./heartAnatomy";
+import { SEGMENT_VESSEL, VESSEL, VESSELS, type Vessel } from "../anatomy/registry";
 
 /**
  * AHA 17-segment polar map ("bullseye"), shaded by the chance of narrowing in the artery that usually
  * supplies each segment. Standard assignment (Cerqueira et al., Circulation 2002;105:539-42), right
  * dominance assumed. It is a map of supply, not of perfusion or wall motion: one flat colour per artery.
  */
-export const SEGMENT_VESSEL: Record<number, Vessel> = {
-  1: "lad", 2: "lad", 7: "lad", 8: "lad", 13: "lad", 14: "lad", 17: "lad",
-  3: "rca", 4: "rca", 9: "rca", 10: "rca", 15: "rca",
-  5: "lcx", 6: "lcx", 11: "lcx", 12: "lcx", 16: "lcx",
-};
 
 const SEGMENT_NAME: Record<number, string> = {
   1: "basal anterior", 2: "basal anteroseptal", 3: "basal inferoseptal", 4: "basal inferior",
@@ -102,7 +97,7 @@ export default function Bullseye({ probs, selected, onHover, onSelect }: Props) 
               onMouseEnter={() => onHover(v)}
               onClick={() => onSelect(selected === v ? null : v)}
             >
-              <title>{`Segment ${s.seg}, ${SEGMENT_NAME[s.seg]}: usually supplied by the ${v.toUpperCase()}`}</title>
+              <title>{`Segment ${s.seg}, ${SEGMENT_NAME[s.seg]}: usually supplied by the ${VESSEL[v].label}`}</title>
               <path d={sectorPath(s, size)} fill={segmentColor(s.seg, probs)} opacity={opacity(s.seg)} stroke="#0f172a" strokeWidth={1.2} />
               <text x={p.x} y={p.y} textAnchor="middle" dominantBaseline="central" fontSize={9} fill="#0f172a" fontWeight={600} pointerEvents="none">
                 {s.seg}
@@ -110,8 +105,8 @@ export default function Bullseye({ probs, selected, onHover, onSelect }: Props) 
             </g>
           );
         })}
-        <g className="cursor-pointer" onMouseEnter={() => onHover("lad")} onClick={() => onSelect(selected === "lad" ? null : "lad")}>
-          <title>Segment 17, apex: usually supplied by the LAD</title>
+        <g className="cursor-pointer" onMouseEnter={() => onHover(SEGMENT_VESSEL[17])} onClick={() => onSelect(selected === SEGMENT_VESSEL[17] ? null : SEGMENT_VESSEL[17])}>
+          <title>{`Segment 17, apex: usually supplied by the ${VESSEL[SEGMENT_VESSEL[17]].label}`}</title>
           <circle cx={size / 2} cy={size / 2} r={R.apex * size / 2} fill={segmentColor(17, probs)} opacity={opacity(17)} stroke="#0f172a" strokeWidth={1.2} />
           <text x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central" fontSize={9} fill="#0f172a" fontWeight={600} pointerEvents="none">17</text>
         </g>
@@ -121,8 +116,8 @@ export default function Bullseye({ probs, selected, onHover, onSelect }: Props) 
       </svg>
       <figcaption className="text-[11px] leading-snug text-gray-400">
         <div className="mb-1 text-gray-300">Muscle each artery usually supplies</div>
-        Standard AHA 17-segment assignment (LAD 1, 2, 7, 8, 13, 14, 17; LCX 5, 6, 11, 12, 16; RCA 3, 4, 9, 10, 15;
-        right dominance assumed), shaded by that artery&apos;s chance of narrowing. Septum on the left. Not a perfusion
+        Standard AHA 17-segment assignment ({VESSELS.map((v) => `${v.label} ${v.aha.join(", ")}`).join("; ")}; right
+        dominance assumed), shaded by that artery&apos;s chance of narrowing. Septum on the left. Not a perfusion
         or wall-motion map. Hover to find the artery on the heart; click to inspect it.
       </figcaption>
     </figure>

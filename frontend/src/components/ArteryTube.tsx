@@ -6,11 +6,8 @@ import { formatPct } from "../risk";
 import { patchMaterial } from "./atlasMaterials";
 import { NEUTRAL_ARTERY, riskColor, taperedTube, undecided, type Vessel } from "./heartAnatomy";
 
-export interface ArteryProbs {
-  lad: number;
-  lcx: number;
-  rca: number;
-}
+import type { ArteryProbs } from "../anatomy/registry";
+export type { ArteryProbs };
 
 interface Props {
   /** null for vessels without a model output (the left main is not labelled in the dataset). */

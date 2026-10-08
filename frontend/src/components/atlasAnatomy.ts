@@ -8,7 +8,7 @@
  * per-vertex `_branch` attribute indexes into that branch list.
  */
 import * as THREE from "three";
-import type { Vessel } from "./heartAnatomy";
+import { VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
 
 export const ATLAS_HEART_URL = "/models/bp3d_heart.glb";
 export const ATLAS_THORAX_URL = "/models/bp3d_thorax.glb";
@@ -44,7 +44,7 @@ export interface AtlasPart {
 export interface PreparedAtlasHeart {
   parts: AtlasPart[];
   center: THREE.Vector3; // heart centre in the GLB frame (metres)
-  /** Ventricular wall, per vertex: territory weights for lad, lcx, rca (sum 1). */
+  /** Ventricular wall, per vertex: one territory weight per registry artery (VESSEL_IDS order, sum 1). */
   territory: Float32Array;
   /** Ventricular wall, per vertex: epicardial fat amount 0..1 (fat fills the coronary grooves). */
   fat: Float32Array;
@@ -54,7 +54,7 @@ export interface PreparedAtlasHeart {
   labels: Record<Vessel, THREE.Vector3>;
 }
 
-const TARGETS: Vessel[] = ["lad", "lcx", "rca"];
+const N = VESSEL_IDS.length;
 // Softness of territory boundaries (mm): weights ~ exp(-(d - dmin) / TAU).
 const TERRITORY_TAU_MM = 2.2;
 
@@ -68,9 +68,8 @@ function bakeParts(scene: THREE.Object3D, center: THREE.Vector3 | null) {
     const src = mesh.geometry;
     const g = new THREE.BufferGeometry();
     g.setIndex(src.index ? Array.from(src.index.array) : null);
-    for (const name of ["position", "normal", "_branch", "_vdist"]) {
+    for (const name of Object.keys(src.attributes)) {
       const a = src.getAttribute(name);
-      if (!a) continue;
       const arr = new Float32Array(a.count * a.itemSize);
       for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) arr[i * a.itemSize + k] = a.getComponent(i, k);
       g.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize));
@@ -119,19 +118,24 @@ export function prepareAtlasHeart(scene: THREE.Object3D): PreparedAtlasHeart {
     p.geometry.computeBoundingSphere();
   }
 
-  // Territories from the baked distance (0.1 mm units) to each scored coronary tree.
-  const vd = wall.geometry.getAttribute("_vdist");
+  // Territories from the baked distance (0.1 mm units) to each registry artery's tree.
+  const dist = VESSELS.map((v) => {
+    const a = wall.geometry.getAttribute(`_d_${v.atlasPart}`);
+    if (!a) throw new Error(`atlas heart has no distance attribute for ${v.atlasPart}`);
+    return a;
+  });
+  const groove = wall.geometry.getAttribute("_d_groove");
   const n = wall.geometry.getAttribute("position").count;
-  const territory = new Float32Array(n * 3);
+  const territory = new Float32Array(n * N);
   const fat = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    const d = [vd.getX(i) / 10, vd.getY(i) / 10, vd.getZ(i) / 10]; // mm to the LAD, LCX, RCA trees
-    const dmin = Math.min(d[0], d[1], d[2]);
+    const d = dist.map((a) => a.getX(i) / 10); // mm
+    const dmin = Math.min(...d);
     const w = d.map((x) => Math.exp(-(x - dmin) / TERRITORY_TAU_MM));
-    const s = w[0] + w[1] + w[2];
-    territory.set([w[0] / s, w[1] / s, w[2] / s], i * 3);
+    const s = w.reduce((a, b) => a + b, 0);
+    territory.set(w.map((x) => x / s), i * N);
     // Epicardial fat fills the grooves the main vessels run in, thinning out within a few mm.
-    fat[i] = 1 - smoothstep(2, 7, vd.getW(i) / 10);
+    fat[i] = groove ? 1 - smoothstep(2, 7, groove.getX(i) / 10) : 0;
   }
 
   const parts = raw.filter((p) => p.geometry.getAttribute("position").count > 0);
@@ -159,18 +163,18 @@ function smoothstep(e0: number, e1: number, x: number) {
 function vesselViews(geometry: THREE.BufferGeometry, territory: Float32Array) {
   const pos = geometry.getAttribute("position");
   const nrm = geometry.getAttribute("normal");
-  const sums = TARGETS.map(() => new THREE.Vector3());
+  const sums = VESSEL_IDS.map(() => new THREE.Vector3());
   const p = new THREE.Vector3();
   const nv = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
     p.fromBufferAttribute(pos, i);
     nv.fromBufferAttribute(nrm, i);
     if (nv.dot(p) <= 0) continue; // outer (epicardial) surface only
-    TARGETS.forEach((_, k) => {
-      if (territory[i * 3 + k] > 0.6) sums[k].add(p);
+    VESSEL_IDS.forEach((_, k) => {
+      if (territory[i * N + k] > 0.6) sums[k].add(p);
     });
   }
-  return Object.fromEntries(TARGETS.map((t, k) => {
+  return Object.fromEntries(VESSEL_IDS.map((t, k) => {
     const dir = sums[k].normalize();
     // Face the territory horizontally, from a gently elevated (or, for the inferior wall, low) viewpoint.
     dir.y = Math.min(0.3, Math.max(-0.35, dir.y * 0.5 + 0.1));
@@ -181,7 +185,7 @@ function vesselViews(geometry: THREE.BufferGeometry, territory: Float32Array) {
 /** Where to pin each vessel's label: on its proximal trunk, nudged outward from the heart. */
 function labelAnchors(byKey: Record<string, AtlasPart>): Record<Vessel, THREE.Vector3> {
   const lm = byKey.lm?.geometry.boundingSphere?.center ?? new THREE.Vector3();
-  const anchor = (key: Vessel, trunkFma: string | null, along: number) => {
+  const anchor = (key: string, trunkFma: string | null, along: number) => {
     const part = byKey[key];
     const pos = part.geometry.getAttribute("position");
     const br = part.geometry.getAttribute("_branch");
@@ -206,11 +210,9 @@ function labelAnchors(byKey: Record<string, AtlasPart>): Record<Vessel, THREE.Ve
     const at = pts[Math.floor(pts.length * along)].clone();
     return at.add(at.clone().normalize().multiplyScalar(0.008));
   };
-  return {
-    lad: anchor("lad", "FMA74912", 0.45),
-    lcx: anchor("lcx", null, 0.5),
-    rca: anchor("rca", "FMA3802", 0.35),
-  };
+  return Object.fromEntries(
+    VESSELS.map((v) => [v.id, anchor(v.atlasPart, v.atlasLabel.trunkFma, v.atlasLabel.along)]),
+  ) as Record<Vessel, THREE.Vector3>;
 }
 
 /** HEAD probe: the dev server answers unknown paths with index.html, so a hit must not be HTML. */

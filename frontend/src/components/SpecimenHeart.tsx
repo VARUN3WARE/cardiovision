@@ -6,7 +6,10 @@ import { acceleratedRaycast } from "three-mesh-bvh";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import { NEUTRAL_ARTERY, riskColor, type Vessel } from "./heartAnatomy";
-import { SPECIMEN_SCALE, SPECIMEN_URL, prepareSpecimen } from "./specimenAnatomy";
+import { SPECIMEN_SCALE, SPECIMEN_URL, TERRITORY_STRIDE as S, prepareSpecimen } from "./specimenAnatomy";
+import { VESSEL_IDS } from "../anatomy/registry";
+
+const N = VESSEL_IDS.length; // index of the ventricle mask within each vertex's territory record
 
 interface Props {
   probs: ArteryProbs | null;
@@ -21,7 +24,6 @@ interface Props {
   onReady: (views: Record<Vessel, THREE.Vector3>) => void;
 }
 
-const TARGETS: Vessel[] = ["lad", "lcx", "rca"];
 
 /** The textured, sculpted heart model with the risk-coloured coronary tree fitted onto it. */
 export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bpm, onSelect, onHover, onReady }: Props) {
@@ -60,16 +62,16 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bp
     const tmp = new THREE.Color();
     let any = false;
     for (let i = 0; i < color.count; i++) {
-      const mask = T[i * 4 + 3];
+      const mask = T[i * S + N];
       let alpha = 0;
       if (mask > 0 && probs && mode === "territories") {
         c.setRGB(0, 0, 0);
-        TARGETS.forEach((t, k) => c.add(riskColor(probs[t], tmp).multiplyScalar(T[i * 4 + k])));
+        VESSEL_IDS.forEach((t, k) => c.add(riskColor(probs[t], tmp).multiplyScalar(T[i * S + k])));
         alpha = 0.55 * mask;
       } else if (mask > 0 && focus) {
         // Highlight the myocardium supplied by the selected (or hovered) artery.
         c.copy(probs ? riskColor(probs[focus], tmp) : NEUTRAL_ARTERY);
-        alpha = 0.42 * mask * Math.max(0, (T[i * 4 + TARGETS.indexOf(focus)] - 0.35) / 0.65);
+        alpha = 0.42 * mask * Math.max(0, (T[i * S + VESSEL_IDS.indexOf(focus)] - 0.35) / 0.65);
       }
       if (alpha > 0.01) any = true;
       color.setXYZW(i, c.r, c.g, c.b, alpha);
@@ -93,9 +95,9 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bp
     if (!e.face) return;
     const T = prep.territory;
     const i = e.face.a;
-    if (T[i * 4 + 3] < 0.5) return;
-    const k = [0, 1, 2].reduce((a, b) => (T[i * 4 + a] >= T[i * 4 + b] ? a : b));
-    onSelect(TARGETS[k] === selected ? null : TARGETS[k]);
+    if (T[i * S + N] < 0.5) return;
+    const k = VESSEL_IDS.reduce((best, _, j) => (T[i * S + j] > T[i * S + best] ? j : best), 0);
+    onSelect(VESSEL_IDS[k] === selected ? null : VESSEL_IDS[k]);
   };
 
   const center = prep.center;
