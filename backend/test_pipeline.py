@@ -94,4 +94,21 @@ assert {"Age", "FunctionClass"} <= flagged, flagged
 print(f"\n=== RANGE WARNINGS === {sorted(flagged)}")
 
 assert set(_feature_info()["influence"]) == {"cad", "lad", "lcx", "rca"}
+
+# 7. Exact attributions for every bundle-branch-block category and every demo preset. In the CAD
+#    blend the linear member attributes to BBB one-hots and the tree member to raw BBB; both must be
+#    summed onto the displayed BBB row (an overwrite once dropped the tree's share and broke /explain).
+import json
+from pathlib import Path
+
+presets = json.loads((Path(__file__).parent / "../frontend/src/presets.json").read_text())
+cases = [{**patient, "BBB": b} for b in ("N", "LBBB", "RBBB")]
+cases += [{k: v for k, v in p["features"].items() if k != "BMI"} for p in presets]
+for case in cases:
+    r = explain_endpoint(PatientFeatures(**case))
+    for t, res in r.results.items():
+        exp = r.explanations[t]
+        logit = math.log(res.probability / (1 - res.probability))
+        assert abs(exp.base_value + sum(exp.shap_values) - logit) < 1e-4, f"{t}: attributions do not add up"
+print(f"\n=== EXACT ATTRIBUTIONS === {len(cases)} cases x 4 models within 1e-4")
 print("\n=== Pipeline test PASSED ===")

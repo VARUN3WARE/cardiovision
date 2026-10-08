@@ -391,7 +391,10 @@ def display_attributions(C: pd.DataFrame) -> pd.DataFrame:
     Composite clinical scores stay as their own named rows."""
     C = C.copy()
     if {"BBB_LBBB", "BBB_RBBB"} & set(C.columns):
-        C["BBB"] = C.pop("BBB_LBBB") if "BBB_LBBB" in C else 0.0
-        if "BBB_RBBB" in C:
-            C["BBB"] = C["BBB"] + C.pop("BBB_RBBB")
+        # Add, never overwrite: in a blend, a tree member may attribute to the raw BBB column too.
+        merged = C["BBB"] if "BBB" in C else 0.0
+        for col in ("BBB_LBBB", "BBB_RBBB"):
+            if col in C:
+                merged = merged + C.pop(col)
+        C["BBB"] = merged
     return C
