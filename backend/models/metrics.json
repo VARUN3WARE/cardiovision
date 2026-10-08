@@ -1,6 +1,6 @@
 {
   "cad": {
-    "model": "Blend (log-odds) of L2 logistic regression on 8 clinical composites and LightGBM depth-1 trees",
+    "model": "Blend (log-odds) of L2 logistic regression (55 inputs plus 8 clinical composite scores) and LightGBM depth-1 trees",
     "n": 303,
     "positive": 216,
     "negative": 87,
@@ -100,7 +100,7 @@
     "train_seconds": 11.6
   },
   "lad": {
-    "model": "Platt-recalibrated blend of calibrated logistic regression (clinical composites) and XGBoost on engineered features",
+    "model": "Platt-recalibrated blend of calibrated logistic regression (55 inputs plus 8 clinical composites) and XGBoost on all engineered features",
     "n": 303,
     "positive": 177,
     "negative": 126,
@@ -200,7 +200,7 @@
     "train_seconds": 253.9
   },
   "lcx": {
-    "model": "Platt-recalibrated blend of calibrated logistic regression (clinical composites) and XGBoost on engineered features",
+    "model": "Platt-recalibrated blend of calibrated logistic regression (55 inputs plus 8 clinical composites) and XGBoost on all engineered features",
     "n": 303,
     "positive": 119,
     "negative": 184,
@@ -300,7 +300,7 @@
     "train_seconds": 269.3
   },
   "rca": {
-    "model": "Blend (log-odds) of L1 logistic regression on engineered features and LightGBM depth-2 trees",
+    "model": "Blend (log-odds) of L1 logistic regression on all engineered features and LightGBM depth-2 trees",
     "n": 303,
     "positive": 114,
     "negative": 189,

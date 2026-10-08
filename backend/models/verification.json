@@ -1,0 +1,398 @@
+{
+  "targets": {
+    "cad": {
+      "auc_fresh_mean": 0.9386760323541932,
+      "auc_fresh_sd": 0.0023574762116809014,
+      "auc_saved_cv": 0.9433056619838229,
+      "auc_95ci": [
+        0.9143978201477844,
+        0.9665939851738438
+      ],
+      "brier": 0.0868590687543235,
+      "brier_prevalence_only": 0.20468581511616513,
+      "calibration_slope": 1.1060731347415453,
+      "calibration_intercept": -0.04401758020093197,
+      "permutation_auc": [
+        0.5559280544912728,
+        0.42736270753512134,
+        0.5716794380587483
+      ],
+      "baselines": {
+        "diamond_forrester_only": 0.8222647935291614,
+        "lr_raw": 0.9152405278842058,
+        "lr_raw_beaten_in_repeats": "5/5",
+        "xgb_default": 0.899318859088974,
+        "xgb_default_beaten_in_repeats": "5/5"
+      }
+    },
+    "lad": {
+      "auc_fresh_mean": 0.8588288045915163,
+      "auc_fresh_sd": 0.005711978276204966,
+      "auc_saved_cv": 0.8563626580575733,
+      "auc_95ci": [
+        0.8220945512545477,
+        0.906569378696261
+      ],
+      "brier": 0.14703038078448022,
+      "brier_prevalence_only": 0.24291736104303494,
+      "calibration_slope": 0.9190959771544609,
+      "calibration_intercept": -0.0010750844647115752,
+      "permutation_auc": [
+        0.5627298000179355,
+        0.48766926733028426,
+        0.4009505873912654
+      ],
+      "baselines": {
+        "diamond_forrester_only": 0.7599542641915523,
+        "lr_raw": 0.8096672944130571,
+        "lr_raw_beaten_in_repeats": "5/5",
+        "xgb_default": 0.8160075329566855,
+        "xgb_default_beaten_in_repeats": "5/5"
+      }
+    },
+    "lcx": {
+      "auc_fresh_mean": 0.7452594081110705,
+      "auc_fresh_sd": 0.018407656240484398,
+      "auc_saved_cv": 0.7611983924004384,
+      "auc_95ci": [
+        0.7057456055450279,
+        0.8122042608837552
+      ],
+      "brier": 0.20150292065210781,
+      "brier_prevalence_only": 0.23849513664237712,
+      "calibration_slope": 0.8529981476058136,
+      "calibration_intercept": -0.055671976805966666,
+      "permutation_auc": [
+        0.5103215199123128,
+        0.503059919620022,
+        0.4750182681768359
+      ],
+      "baselines": {
+        "diamond_forrester_only": 0.7070241139934235,
+        "lr_raw": 0.6640208257215929,
+        "lr_raw_beaten_in_repeats": "5/5",
+        "xgb_default": 0.7350657654366094,
+        "xgb_default_beaten_in_repeats": "4/5"
+      }
+    },
+    "rca": {
+      "auc_fresh_mean": 0.753968253968254,
+      "auc_fresh_sd": 0.007858691139251249,
+      "auc_saved_cv": 0.7388749651907547,
+      "auc_95ci": [
+        0.7021257968672229,
+        0.8105484048383461
+      ],
+      "brier": 0.19322297444184894,
+      "brier_prevalence_only": 0.23468287422801692,
+      "calibration_slope": 1.0291292776630845,
+      "calibration_intercept": -0.051198751164828624,
+      "permutation_auc": [
+        0.5026455026455027,
+        0.4740090968161144,
+        0.49540517961570596
+      ],
+      "baselines": {
+        "diamond_forrester_only": 0.689060614499211,
+        "lr_raw": 0.7228348649401279,
+        "lr_raw_beaten_in_repeats": "5/5",
+        "xgb_default": 0.6911073981249418,
+        "xgb_default_beaten_in_repeats": "5/5"
+      }
+    }
+  },
+  "data": {
+    "rows": 303,
+    "inputs": 55,
+    "missing_values": 0,
+    "duplicate_patients": 0,
+    "cad_without_vessel_label": 0,
+    "vessel_label_without_cad": 1,
+    "prevalence": {
+      "cad": 0.713,
+      "lad": 0.584,
+      "lcx": 0.393,
+      "rca": 0.376
+    }
+  },
+  "leakage": {
+    "target_columns_in_inputs": [],
+    "top_single_input_auc": {
+      "cad": [
+        [
+          "Typical Chest Pain",
+          0.799
+        ],
+        [
+          "Age",
+          0.724
+        ],
+        [
+          "Atypical",
+          0.712
+        ]
+      ],
+      "lad": [
+        [
+          "Typical Chest Pain",
+          0.732
+        ],
+        [
+          "EF-TTE",
+          0.708
+        ],
+        [
+          "Age",
+          0.677
+        ]
+      ],
+      "lcx": [
+        [
+          "Age",
+          0.681
+        ],
+        [
+          "Typical Chest Pain",
+          0.649
+        ],
+        [
+          "BP",
+          0.617
+        ]
+      ],
+      "rca": [
+        [
+          "Typical Chest Pain",
+          0.65
+        ],
+        [
+          "Neut",
+          0.635
+        ],
+        [
+          "Age",
+          0.635
+        ]
+      ]
+    }
+  },
+  "vessel_specificity": {
+    "lad": {
+      "own_model_auc": 0.8588288045915163,
+      "cad_model_auc_for_this_label": 0.8595193256210205,
+      "auc_within_cad_patients": 0.6857954545454544
+    },
+    "lcx": {
+      "own_model_auc": 0.7452594081110705,
+      "cad_model_auc_for_this_label": 0.7345633905736209,
+      "auc_within_cad_patients": 0.6320713852551331
+    },
+    "rca": {
+      "own_model_auc": 0.753968253968254,
+      "cad_model_auc_for_this_label": 0.7295553699062471,
+      "auc_within_cad_patients": 0.6188510491916065
+    },
+    "single_vessel_patients": {
+      "n": 87,
+      "top_vessel_correct": 0.6091954022988506,
+      "always_lad_correct": 0.6551724137931034,
+      "isolated_rca_ranked_first": "0/17"
+    }
+  },
+  "served": {
+    "cad": {
+      "max_diff_vs_fresh_refit": 0.0,
+      "apparent_auc": 0.9820136228182206
+    },
+    "lad": {
+      "max_diff_vs_fresh_refit": 0.0,
+      "apparent_auc": 0.9998206438884406
+    },
+    "lcx": {
+      "max_diff_vs_fresh_refit": 0.0,
+      "apparent_auc": 1.0
+    },
+    "rca": {
+      "max_diff_vs_fresh_refit": 0.0,
+      "apparent_auc": 0.8637334075930567
+    },
+    "api_vs_saved_max_diff_40_patients": 0.0
+  },
+  "clinical_direction": [
+    {
+      "check": "Typical angina vs no chest pain",
+      "model": "cad",
+      "mean_change_pts": 28.9,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Atypical chest pain vs no chest pain",
+      "model": "cad",
+      "mean_change_pts": -0.4,
+      "expected": "+",
+      "as_expected": false
+    },
+    {
+      "check": "Age 70 vs 45",
+      "model": "cad",
+      "mean_change_pts": 14.9,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Male vs female",
+      "model": "cad",
+      "mean_change_pts": 6.0,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Diabetes vs none",
+      "model": "cad",
+      "mean_change_pts": 9.7,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Hypertension vs none",
+      "model": "cad",
+      "mean_change_pts": 9.3,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Current smoker vs not",
+      "model": "cad",
+      "mean_change_pts": 2.2,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "ST depression vs none",
+      "model": "cad",
+      "mean_change_pts": 4.6,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "T-wave inversion vs none",
+      "model": "cad",
+      "mean_change_pts": 9.2,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Regional wall-motion abnormality 2 vs 0",
+      "model": "cad",
+      "mean_change_pts": 13.5,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Ejection fraction 35% vs 60%",
+      "model": "cad",
+      "mean_change_pts": 8.7,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Fasting glucose 160 vs 90 mg/dL",
+      "model": "cad",
+      "mean_change_pts": 2.5,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "HDL 30 vs 55 mg/dL",
+      "model": "cad",
+      "mean_change_pts": -0.2,
+      "expected": "+",
+      "as_expected": false
+    },
+    {
+      "check": "Triglycerides 250 vs 100 mg/dL",
+      "model": "cad",
+      "mean_change_pts": 7.9,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "LDL 160 vs 90 mg/dL",
+      "model": "cad",
+      "mean_change_pts": -1.7,
+      "expected": "+",
+      "as_expected": false
+    },
+    {
+      "check": "Regional wall-motion abnormality 2 vs 0 (LAD model)",
+      "model": "lad",
+      "mean_change_pts": 16.7,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Typical angina vs no chest pain (RCA model)",
+      "model": "rca",
+      "mean_change_pts": 17.3,
+      "expected": "+",
+      "as_expected": true
+    },
+    {
+      "check": "Diabetes vs none (RCA model)",
+      "model": "rca",
+      "mean_change_pts": 19.4,
+      "expected": "+",
+      "as_expected": true
+    }
+  ],
+  "raw_rates": {
+    "cad_rate_by_chest_pain": {
+      "typical": [
+        0.94,
+        164
+      ],
+      "atypical": [
+        0.43,
+        93
+      ],
+      "non-anginal": [
+        0.19,
+        16
+      ],
+      "none recorded": [
+        0.63,
+        30
+      ]
+    },
+    "cad_rate_by_ldl": {
+      "0-100": [
+        0.73,
+        153
+      ],
+      "100-130": [
+        0.68,
+        88
+      ],
+      "130-400": [
+        0.73,
+        62
+      ]
+    },
+    "cad_rate_by_hdl": {
+      "0-40": [
+        0.76,
+        169
+      ],
+      "40-50": [
+        0.63,
+        93
+      ],
+      "50-200": [
+        0.71,
+        41
+      ]
+    }
+  },
+  "seconds": 99
+}

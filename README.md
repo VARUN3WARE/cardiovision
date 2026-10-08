@@ -247,6 +247,19 @@ frontend/
 | LCX | 0.761 ± 0.013 | 0.625 | 0.196 | 0.700 | 0.656 | 0.497 | 0.566 |
 | RCA | 0.739 ± 0.006 | 0.594 | 0.199 | 0.682 | 0.596 | 0.479 | 0.530 |
 
+± is the spread across the 5 CV repeats (split noise), not a confidence interval. Bootstrap 95% CIs are wide
+with 303 patients: CAD 0.91–0.97, LAD 0.82–0.91, LCX 0.71–0.81, RCA 0.70–0.81.
+
+**Independently verified** (`backend/verify_models.py` → [`docs/model-verification.md`](docs/model-verification.md)):
+no target leakage (the full recipe on shuffled labels scores AUC 0.48–0.52); re-run on split seeds never used in
+development it gives AUC 0.939 / 0.859 / 0.745 / 0.754 (CAD / LAD / LCX / RCA), so LCX and RCA move about ±0.02
+between split sets; it beats plain logistic regression, default XGBoost and the Diamond-Forrester score alone on the
+same folds; calibration slopes 0.85–1.11; the served models equal a fresh refit and the API returns exactly their
+predictions. Two honest limits it confirms: the vessel models mostly measure how much CAD there is, not which
+artery (within CAD patients their AUC falls to 0.62–0.69), and LDL/HDL carry no protective signal in this
+referral cohort. Expect the true AUCs to be about 0.005–0.01 lower than shown (0.01–0.02 for RCA), because the
+recipe was chosen on these 303 patients.
+
 Decisions at 0.5 shown. The app uses the F1-optimal threshold learned in training (nested estimates: LCX
 F1 0.66, RCA F1 0.61, CAD rule-out sensitivity 0.97 with NPV 0.89); see the model report. The previous XGBoost
 model scored AUC 0.90 / 0.83 / 0.75 / 0.68 under the same protocol. Source: `backend/models/metrics.json`

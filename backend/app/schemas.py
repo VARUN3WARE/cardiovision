@@ -9,10 +9,11 @@ Categorical fields use the raw dataset values:
   BBB: "N" | "LBBB" | "RBBB"
   VHD: "N" | "mild" | "Moderate" | "Severe"
 
-Only Age and Sex are required. Any other field may be omitted (or null): the API fills it with
-the training-cohort median / most common value and lists it in the response's `imputed` field.
+Only Age and Sex are required. Any other field may be omitted (or null): the API fills it and lists it
+in the response's `imputed` field. Unrecorded findings count as absent (binary and Y/N fields -> no,
+categories -> their "none" level), measurements take the training-cohort median (train.feature_info).
 BMI and Obesity are derived from Weight and Height when those are given (the dataset defines
-Obesity as BMI >= 25).
+Obesity as BMI >= 25); with no BMI, the median BMI (26.8) and hence Obesity = "Y" are used.
 """
 from __future__ import annotations
 

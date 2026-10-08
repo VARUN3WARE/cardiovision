@@ -5,7 +5,7 @@ Chosen by the experiments in backend/experiments/ (see exp_final_recipe.py and t
 technical write-up). Verified on split seeds never used for selection (5x5 repeated CV):
 
     target  model                                              AUC (baseline XGB)
-    cad     L2-LR on 8 core clinical features + LightGBM stumps     0.94 (0.90)
+    cad     L2-LR on inputs + 8 clinical composites + LightGBM stumps 0.94 (0.90)
     lad     Platt LR(core) + XGBoost(engineered), recalibrated      0.86 (0.83)
     lcx     same as LAD                                             0.76 (0.745)
     rca     L1-LR on engineered features + LightGBM depth-2          0.745 (0.68-0.70)
@@ -280,10 +280,10 @@ class PlattMargin(BaseEstimator, ClassifierMixin):
 
 
 MODEL_DESCRIPTIONS = {
-    "cad": "Blend (log-odds) of L2 logistic regression on 8 clinical composites and LightGBM depth-1 trees",
-    "lad": "Platt-recalibrated blend of calibrated logistic regression (clinical composites) and XGBoost on engineered features",
-    "lcx": "Platt-recalibrated blend of calibrated logistic regression (clinical composites) and XGBoost on engineered features",
-    "rca": "Blend (log-odds) of L1 logistic regression on engineered features and LightGBM depth-2 trees",
+    "cad": "Blend (log-odds) of L2 logistic regression (55 inputs plus 8 clinical composite scores) and LightGBM depth-1 trees",
+    "lad": "Platt-recalibrated blend of calibrated logistic regression (55 inputs plus 8 clinical composites) and XGBoost on all engineered features",
+    "lcx": "Platt-recalibrated blend of calibrated logistic regression (55 inputs plus 8 clinical composites) and XGBoost on all engineered features",
+    "rca": "Blend (log-odds) of L1 logistic regression on all engineered features and LightGBM depth-2 trees",
 }
 
 

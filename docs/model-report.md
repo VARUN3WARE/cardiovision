@@ -19,7 +19,8 @@ How the production models were chosen, how well they perform, and where they fal
 
 `backend/experiments/harness.py` is shared by every experiment, and `train.py` follows the same protocol.
 
-- **Repeated stratified cross-validation:** 5 folds × 5 repeats. Each repeat gives out-of-fold (OOF) probabilities for all 303 patients. Metrics are averaged over repeats, and ± is the standard deviation across repeats.
+- **Repeated stratified cross-validation:** 5 folds × 5 repeats. Each repeat gives out-of-fold (OOF) probabilities for all 303 patients. Metrics are averaged over repeats, and ± is the standard deviation across repeats (split noise, not a confidence interval; bootstrap CIs are in the limitations section).
+- **Independent verification:** `backend/verify_models.py` re-checks leakage (label permutation), re-runs the recipe on never-used split seeds, compares baselines on the same folds, tests vessel specificity, confirms the served models and API, and checks clinical direction. Results: `docs/model-verification.md`.
 - **Everything learned from data happens inside each training fold:** scaling, regularisation strength (inner CV), calibration (inner CV), and decision thresholds (inner CV). The engineered clinical features are stateless formulas that use no labels.
 - **Thresholds are honest:** the reported tuned-threshold metrics are *nested*. The threshold is chosen inside each training fold and applied to the held-out fold.
 - **How the final model was chosen, to limit selection bias:**
@@ -115,12 +116,13 @@ Studies that report a clean protocol agree with our numbers:
 
 ## 6. Limitations
 
-- **One centre, 303 referred patients, no external validation.** Bootstrap 95% intervals on AUC are about ±0.015–0.03. The cohort is 71% CAD-positive, so the models are not validated for screening populations.
+- **One centre, 303 referred patients, no external validation.** Bootstrap 95% intervals on AUC: CAD 0.91–0.97, LAD 0.82–0.91, LCX 0.71–0.81, RCA 0.70–0.81 (about ±0.03 for CAD and LAD, ±0.05 for LCX and RCA). The cohort is 71% CAD-positive, so the models are not validated for screening populations.
 - **LCX and RCA are hard targets.** Their AUC is 0.74–0.76, and at 0.5 they miss about half of stenoses. The UI marks them as having limited discrimination.
-- **The vessel models are not very vessel-specific.** They partly learn "how much CAD" rather than "which artery". No isolated-RCA patient is singled out by the held-out models; every one also gets a high LAD score. The UI therefore shows the LAD false alarm for the RCA example patient.
+- **The vessel models are not very vessel-specific.** They mostly learn "how much CAD" rather than "which artery": the CAD model's own estimate predicts the LAD label as well as the LAD model does (AUC 0.86 vs 0.86), and among CAD patients the vessel AUCs fall to 0.69 (LAD), 0.63 (LCX) and 0.62 (RCA). In the 87 single-vessel patients the highest vessel estimate picks the right artery 61% of the time, against 66% for always guessing LAD, and isolated RCA disease is ranked first in 0 of 17. The UI therefore presents three independent per-artery estimates, never a culprit vessel, and shows the LAD false alarm for the RCA example patient.
 - **The four models are trained independently.** For about 20% of patients the highest vessel probability exceeds the CAD probability. The UI flags strong disagreement rather than forcing consistency.
 - **Missing inputs** are filled with conventional defaults: an unrecorded finding counts as absent, and measurements take the cohort median. The response lists every filled field. Quick mode (19 inputs, everything else defaulted) was measured with the production models on held-out folds (5-fold, seed 0): CAD AUC 0.935 → 0.937, LAD 0.859 → 0.846, LCX 0.774 → 0.756, RCA 0.744 → 0.728.
-- **Selection bias:** about 0.003 of optimism remains from choosing among close candidates on the final seeds.
+- **Selection bias:** the recipe was chosen among many candidates on these 303 patients. New split seeds cannot remove patient-level selection optimism; an independent review estimates about 0.005–0.01 (0.01–0.02 for RCA). On never-used split seeds the CAD AUC is 0.937–0.939 rather than 0.943.
+- **Associations, not causes:** in this referral cohort LDL and HDL carry no protective signal (CAD rate is flat across LDL levels), and "no chest pain recorded" carries more risk than atypical pain (63% vs 43% CAD), because those patients were referred for other strong reasons. The models learn these patterns; explanations must not be read as physiology or advice. See `docs/model-verification.md` section 7.
 
 ## 7. Reproducing
 
