@@ -6,10 +6,11 @@
 <https://sketchfab.com/3d-models/realistic-human-heart-3f8072336ce94d18b3d0d055a1ece089>,
 licensed under Creative Commons Attribution 4.0 (CC BY 4.0): <https://creativecommons.org/licenses/by/4.0/>
 
-Downloaded from Sketchfab as GLB (2k textures). Used unmodified; CardioVision bakes the node transforms, fits its
-own risk-coloured coronary tree and perfusion territories onto the surface at runtime
-(`frontend/src/components/specimenAnatomy.ts`), and overrides metalness to 0. If this file is missing, the app
-falls back to its procedural (schematic) heart.
+Downloaded from Sketchfab as GLB (2k PNG textures, 7.55 MB). Geometry unmodified; the textures were re-encoded
+as WebP (base colour 2048 px, normal and roughness maps 1024 px) with `frontend/scripts/compress-heart.mjs`, giving
+1.6 MB. CardioVision bakes the node transforms, fits its own risk-coloured coronary tree and perfusion territories
+onto the surface at runtime (`frontend/src/components/specimenAnatomy.ts`), and overrides metalness to 0. If this
+file is missing, the app falls back to its procedural (schematic) heart.
 
 ## bp3d_heart.glb and bp3d_thorax.glb (Atlas heart and chest)
 

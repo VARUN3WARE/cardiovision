@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Bvh, ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
+import { Bvh, ContactShadows, Environment, Lightformer, OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -148,7 +148,7 @@ export default function HeartScene({ probs, pending = false, result = null, metr
     <div className="relative h-full w-full overflow-hidden rounded">
       <Canvas
         camera={{ position: [0, 0.1, 6.8], fov: 40 }}
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         gl={{ antialias: !fx }}
         onPointerMissed={() => {
           onSelect(null);
@@ -209,8 +209,18 @@ export default function HeartScene({ probs, pending = false, result = null, metr
         </Bvh>
 
         {!showChest && (
-          <ContactShadows position={[0, -1.85, 0]} opacity={0.6} scale={7} blur={2.6} far={3.5} resolution={512} />
+          // Rendered once per model (the heartbeat barely moves the shadow), not every frame.
+          <ContactShadows key={`${model}-${ready}`} frames={1} position={[0, -1.85, 0]} opacity={0.6} scale={7} blur={2.6} far={3.5} resolution={512} />
         )}
+
+        {/* Turn HD off by itself if frames stay below ~24 fps (ignored while the page is hidden). */}
+        <PerformanceMonitor
+          bounds={() => [24, 1000]}
+          flipflops={2}
+          onDecline={() => {
+            if (document.visibilityState === "visible") setFx(false);
+          }}
+        />
 
         {fx && (
           <EffectComposer multisampling={4}>

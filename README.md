@@ -207,7 +207,8 @@ frontend/
 ## Credits
 - 3D heart model: ["Realistic Human Heart"](https://sketchfab.com/3d-models/realistic-human-heart-3f8072336ce94d18b3d0d055a1ece089)
   by **neshallads**, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-  (`frontend/public/models/heart.glb`, used unmodified; attribution also shown in the app).
+  (`frontend/public/models/heart.glb`; geometry unmodified, textures re-encoded as WebP to cut the file from 7.55 to
+  1.6 MB; attribution also shown in the app).
 - Atlas heart and chest: **BodyParts3D, © The Database Center for Life Science licensed under CC Attribution 4.0
   International** ([licence](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)); derived files
   `frontend/public/models/bp3d_*.glb` are distributed under CC BY-SA 4.0. Changes and sources:
