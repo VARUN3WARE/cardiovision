@@ -177,14 +177,18 @@ Gotchas found on Day 2:
 
 ## 8. What's NEXT, in priority order
 
-1. 6-page technical doc: dataset preprocessing, model architecture, 3D pipeline, usage, evaluation.
-   docs/model-report.md already covers most of the ML content.
-2. Demo video (3-10 min, English): quick vs full input -> live estimate -> dataset patients (held-out vs
-   angiography, incl. the honest RCA false alarm) -> 3D (click wall/artery, territories, pins) -> explanations
-   -> technical walkthrough (harness, verification, literature comparison).
-3. Devpost page + team info; final push before 14 Oct EOD.
+Done on 8 Oct: physiological breakdown (requirement 3c), technical documentation
+(docs/CardioVision-Technical-Documentation.pdf, 5 of 6 allowed pages; rebuild with docs/build_pdf.sh after
+docs/make_figures.py), demo script (docs/demo-script.md), Devpost text (docs/devpost.md).
+
+1. Record the demo video from docs/demo-script.md (~7 min, 1080p), upload to YouTube as unlisted, add
+   English subtitles.
+2. Devpost: paste docs/devpost.md, add the GitHub link, YouTube link and PDF, and add every teammate with
+   real full names (each needs a Devpost account). Team names are not in the docs yet; add them to the PDF
+   title block if wanted (docs/technical-documentation.md front matter) and rebuild.
+3. Final push before 14 Oct EOD.
 4. Optional: the multi-lens code review of the 7 Oct ML/UI changes was interrupted before reporting
-   (workflow run wf_a4f512a2-65c); printable report export (UX plan item 24).
+   (workflow run wf_a4f512a2-65c); printable patient report export.
 
 ## 9. Key files to read first
 
@@ -203,5 +207,6 @@ Gotchas found on Day 2:
 Track A is locked. Models are verified log-odds blends (AUC .943/.856/.761/.739) with exact attributions and
 honest calibration; the UI is a validated, live-updating clinical form with plain-language explanations; the
 3D view is a CC BY realistic heart with our coronary tree fitted into its grooves (schematic heart as toggle and
-fallback). Commit + push to main after every verified change. Remaining: technical doc, demo video, Devpost.
+fallback). Docs done (5-page PDF, demo script, Devpost text). Commit + push to main after every verified
+change. Remaining: record the video, fill Devpost, team names.
 Gotchas in sections 6, 7b and 7d. Don't switch tracks.

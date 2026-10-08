@@ -9,7 +9,10 @@ Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosi
 | ROC-AUC | **0.943** | **0.856** | **0.761** | **0.739** |
 | Accuracy (at 0.5) | 0.883 | 0.799 | 0.700 | 0.682 |
 
-See [docs/model-report.md](docs/model-report.md) for methods, operating points, calibration, the literature comparison and limitations.
+**Documentation:** [technical documentation (PDF, 5 pages)](docs/CardioVision-Technical-Documentation.pdf) ·
+[source](docs/technical-documentation.md) · [model report](docs/model-report.md) (methods, operating points,
+calibration, literature comparison, limitations) · [demo video script](docs/demo-script.md) ·
+[Devpost text](docs/devpost.md).
 
 > ⚠️ **Clinical Safety Disclaimer:** This system is for **decision support and educational purposes only**. It was trained on 303 patients referred for angiography at a single centre and is **not** validated for screening. It is **not** a diagnosis and does not replace angiography, formal diagnostic imaging or professional medical judgement.
 
