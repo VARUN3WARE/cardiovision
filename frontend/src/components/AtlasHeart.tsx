@@ -1,6 +1,9 @@
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
-import { useGLTF } from "@react-three/drei";
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
+import { Html, useGLTF } from "@react-three/drei";
+import {
+  Suspense, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type MutableRefObject, type RefObject,
+} from "react";
 import * as THREE from "three";
 import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
 import { VesselLabel, type ArteryProbs } from "./ArteryTube";
@@ -53,6 +56,53 @@ const FAT = new THREE.Color("#ecd39a");
 // In X-ray mode tissue fades to a ghost that keeps its silhouette (no effect while opaque).
 const XRAY_FRESNEL = { min: 0.12, power: 2.2 };
 
+interface Tip {
+  text: string;
+  sub?: string;
+  point: THREE.Vector3; // in the atlas group's local frame
+}
+
+/** Hover read-out: each heart structure names itself under the pointer. */
+const TipContext = createContext<{ show: (e: ThreeEvent<PointerEvent>, text: string, sub?: string) => void; hide: () => void }>({
+  show: () => {},
+  hide: () => {},
+});
+
+function useTip(name: (e: ThreeEvent<PointerEvent>) => { text: string; sub?: string } | null) {
+  const tip = useContext(TipContext);
+  return {
+    onPointerMove: (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      const n = name(e);
+      if (n) tip.show(e, n.text, n.sub);
+      else tip.hide();
+    },
+    onPointerOut: () => tip.hide(),
+  };
+}
+
+/** Renders the hover read-out; owns its state so pointer moves don't re-render the heart. */
+function HoverTip({ setter }: { setter: MutableRefObject<(t: Tip | null) => void> }) {
+  const [tip, setTip] = useState<Tip | null>(null);
+  useLayoutEffect(() => {
+    setter.current = setTip;
+  }, [setter]);
+  if (!tip) return null;
+  return (
+    <Html position={tip.point} zIndexRange={[20, 10]} style={{ pointerEvents: "none" }}>
+      <div className="ml-3 -mt-3 w-max max-w-[220px] rounded bg-slate-950/90 px-2 py-1 text-[11px] leading-tight text-white shadow">
+        <div className="first-letter:uppercase">{tip.text}</div>
+        {tip.sub && <div className="text-[10px] text-gray-400">{tip.sub}</div>}
+      </div>
+    </Html>
+  );
+}
+
+const branchName = (part: AtlasPart, e: ThreeEvent<PointerEvent | MouseEvent>) => {
+  const br = part.geometry.getAttribute("_branch");
+  return e.face ? part.branches[Math.round(br.getX(e.face.a))] : undefined;
+};
+
 /** Dense meshes get a BVH so pointer and label-occlusion raycasts stay cheap. */
 function useBvh(parts: AtlasPart[]) {
   useMemo(() => {
@@ -71,7 +121,16 @@ export default function AtlasHeart(props: Props) {
   const atriaRef = useRef<THREE.Mesh>(null);
   const vesselsRef = useRef<THREE.Group>(null);
   const beat = useRef<THREE.Group>(null);
+  const root = useRef<THREE.Group>(null);
   const phase = useRef(0);
+  const tipSetter = useRef<(t: Tip | null) => void>(() => {});
+  const tipApi = useMemo(() => ({
+    show: (e: ThreeEvent<PointerEvent>, text: string, sub?: string) => {
+      if (!root.current) return;
+      tipSetter.current({ text, sub, point: root.current.worldToLocal(e.point.clone()) });
+    },
+    hide: () => tipSetter.current(null),
+  }), []);
 
   useEffect(() => {
     onReady(atlas.views);
@@ -89,42 +148,45 @@ export default function AtlasHeart(props: Props) {
   const occluders = xray ? undefined : [wallRef, atriaRef, vesselsRef] as RefObject<THREE.Object3D>[];
 
   return (
-    <group scale={ATLAS_SCALE}>
-      <group ref={beat}>
-        <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
-        {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={xray} />}
-        <group ref={vesselsRef}>
-          {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={xray} sheen />}
-          {part("pulmonary") && <Tissue part={part("pulmonary")!} color="#c47a72" xray={xray} sheen />}
-          {part("venae_cavae") && <Tissue part={part("venae_cavae")!} color="#6e3442" xray={xray} />}
+    <TipContext.Provider value={tipApi}>
+      <group ref={root} scale={ATLAS_SCALE}>
+        <HoverTip setter={tipSetter} />
+        <group ref={beat}>
+          <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
+          {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={xray} />}
+          <group ref={vesselsRef}>
+            {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={xray} sheen />}
+            {part("pulmonary") && <Tissue part={part("pulmonary")!} color="#c47a72" xray={xray} sheen />}
+            {part("venae_cavae") && <Tissue part={part("venae_cavae")!} color="#6e3442" xray={xray} />}
+          </group>
+          {part("cardiac_veins") && <CardiacVeins part={part("cardiac_veins")!} />}
+          {atlas.parts.filter((p) => p.layer === "coronary").map((p) => (
+            <Coronary key={p.key} part={p} probs={probs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onPick={onPick} />
+          ))}
+          {TARGETS.map((v) => {
+            const p = probs ? probs[v] : null;
+            return (
+              <VesselLabel
+                key={v}
+                vessel={v}
+                name={LABEL[v]}
+                position={atlas.labels[v]}
+                p={p}
+                color={p === null ? NEUTRAL_ARTERY : riskColor(p)}
+                selected={selected}
+                occluders={occluders}
+                onSelect={onSelect}
+              />
+            );
+          })}
         </group>
-        {part("cardiac_veins") && <CardiacVeins part={part("cardiac_veins")!} />}
-        {atlas.parts.filter((p) => p.layer === "coronary").map((p) => (
-          <Coronary key={p.key} part={p} probs={probs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onPick={onPick} />
-        ))}
-        {TARGETS.map((v) => {
-          const p = probs ? probs[v] : null;
-          return (
-            <VesselLabel
-              key={v}
-              vessel={v}
-              name={LABEL[v]}
-              position={atlas.labels[v]}
-              p={p}
-              color={p === null ? NEUTRAL_ARTERY : riskColor(p)}
-              selected={selected}
-              occluders={occluders}
-              onSelect={onSelect}
-            />
-          );
-        })}
+        {chest && (
+          <Suspense fallback={null}>
+            <Thorax center={atlas.center} layers={chest} />
+          </Suspense>
+        )}
       </group>
-      {chest && (
-        <Suspense fallback={null}>
-          <Thorax center={atlas.center} layers={chest} />
-        </Suspense>
-      )}
-    </group>
+    </TipContext.Provider>
   );
 }
 
@@ -197,15 +259,18 @@ function Wall({ part, atlas, meshRef, probs, selected, mode, xray, onSelect, onP
   }), { bump: { freq: 260, strength: 0.9 }, fresnel: XRAY_FRESNEL }), []);
   useXray(material, xray, 0.55);
 
+  const supplier = (face: THREE.Face) => {
+    const T = atlas.territory;
+    return TARGETS[[0, 1, 2].reduce((a, b) => (T[face.a * 3 + a] >= T[face.a * 3 + b] ? a : b))];
+  };
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     if (!e.face) return;
-    const T = atlas.territory;
-    const i = e.face.a;
-    const k = [0, 1, 2].reduce((a, b) => (T[i * 3 + a] >= T[i * 3 + b] ? a : b));
+    const v = supplier(e.face);
     onPick(null);
-    onSelect(TARGETS[k] === selected ? null : TARGETS[k]);
+    onSelect(v === selected ? null : v);
   };
+  const tip = useTip((e) => (e.face ? { text: "Ventricular wall", sub: `Usually supplied by the ${LABEL[supplier(e.face)]} · click to inspect` } : null));
 
   return (
     <BvhMesh
@@ -214,7 +279,7 @@ function Wall({ part, atlas, meshRef, probs, selected, mode, xray, onSelect, onP
       material={material}
       pickable={!xray}
       onClick={onClick}
-      onPointerMove={(e) => e.stopPropagation()}
+      {...tip}
     />
   );
 }
@@ -234,6 +299,10 @@ function Tissue({ part, color, xray, sheen, meshRef }: {
     side: THREE.DoubleSide,
   }), { bump: { freq: 200, strength: 0.6 }, fresnel: XRAY_FRESNEL }), [color, sheen]);
   useXray(material, xray, 0.4);
+  const tip = useTip((e) => {
+    const b = branchName(part, e);
+    return b ? { text: b.name, sub: b.fma } : null;
+  });
   return (
     <BvhMesh
       meshRef={meshRef}
@@ -241,7 +310,7 @@ function Tissue({ part, color, xray, sheen, meshRef }: {
       material={material}
       pickable={!xray}
       onClick={(e) => e.stopPropagation()}
-      onPointerMove={(e) => e.stopPropagation()}
+      {...tip}
     />
   );
 }
@@ -250,8 +319,12 @@ function CardiacVeins({ part }: { part: AtlasPart }) {
   const material = useMemo(() => new THREE.MeshPhysicalMaterial({
     color: "#4a2638", roughness: 0.32, clearcoat: 0.9, clearcoatRoughness: 0.2, side: THREE.DoubleSide,
   }), []);
-  // Anatomical context only: no pointer events.
-  return <mesh geometry={part.geometry} material={material} raycast={() => null} />;
+  // Anatomical context: names itself on hover, but clicks pass through to the wall underneath.
+  const tip = useTip((e) => {
+    const b = branchName(part, e);
+    return b ? { text: b.name, sub: `${b.fma} · cardiac vein, not modelled` } : null;
+  });
+  return <BvhMesh geometry={part.geometry} material={material} pickable {...tip} />;
 }
 
 interface CoronaryProps {
@@ -302,10 +375,15 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
     }
   });
 
-  const branchAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
-    const br = part.geometry.getAttribute("_branch");
-    return e.face ? part.branches[Math.round(br.getX(e.face.a))] : undefined;
-  };
+  const branchAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => branchName(part, e);
+  const tip = useTip((e) => {
+    const b = branchAt(e);
+    if (!b) return null;
+    return {
+      text: b.name,
+      sub: vessel ? `${b.fma} · coloured by the ${LABEL[vessel]} model` : `${b.fma} · not labelled in the dataset`,
+    };
+  });
 
   return (
     <BvhMesh
@@ -328,7 +406,11 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
         e.stopPropagation();
         if (vessel) onHover(vessel);
       }}
-      onPointerOut={() => onHover(null)}
+      onPointerMove={tip.onPointerMove}
+      onPointerOut={() => {
+        onHover(null);
+        tip.onPointerOut();
+      }}
     />
   );
 }
