@@ -123,7 +123,9 @@ ${patch.bump ? NOISE : ""}`,
       frag = frag.replace(
         "#include <opaque_fragment>",
         `{
-    float f = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), ${patch.fresnel.power.toFixed(2)});
+    // Clamp: float error can push |n.v| just above 1, and pow() of a negative base is NaN (which the
+    // bloom pass would then smear across the whole frame).
+    float f = pow(clamp(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0), ${patch.fresnel.power.toFixed(2)});
     diffuseColor.a *= mix(${patch.fresnel.min.toFixed(3)}, 1.0, f);
   }
   #include <opaque_fragment>`,
