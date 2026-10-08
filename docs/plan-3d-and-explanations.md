@@ -1,6 +1,6 @@
 > **Status: approved; in progress (8 Oct 2026).** Produced by a research + judge-panel planning workflow (4 researchers, 3 planners, 2 judges, synthesis).
 >
-> **Progress.** BodyParts3D download approved (heart and chest). Done: B1 (asset pipeline: `scripts/bp3d/`, `npm run assets:bp3d`), B2 (Atlas heart: 59 named branches, branch picking and hover names, X-ray, territories), B3 (chest context with fly-in, cutaway and layer toggles; A/P/L/R/S/I view buttons instead of a view cube). Licence for derived GLBs: CC BY-SA 4.0 (option b). Open: decision 6.3 (default heart), FPS table (E4), and the remaining workstreams.
+> **Progress.** BodyParts3D download approved (heart and chest). Done: B1 (asset pipeline: `scripts/bp3d/`, `npm run assets:bp3d`), B2 (Atlas heart: 59 named branches, branch picking and hover names, X-ray, territories), B3 (chest context with fly-in, cutaway and layer toggles; A/P/L/R/S/I view buttons instead of a view cube). Licence for derived GLBs: CC BY-SA 4.0 (option b). Also done: E1 (one band colour scale, no grey flash, "· 70% chance" labels, neutral left main, stripes), E2 (map caption + wall-motion chip), E3 (registry), E4 (DPR cap, one-shot shadows, auto HD-off, frame-time table in README), E5 (vessel inspector), E6 (bullseye linked to 3D), E7 (heart.glb 7.55 → 1.60 MB). Open: decision 6.3 (default heart) and workstreams WS0, WS3–WS6.
 
 # CardioVision: final plan to win Track A (8 to 14 Oct)
 

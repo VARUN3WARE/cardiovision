@@ -203,6 +203,25 @@ The approved plan is docs/plan-3d-and-explanations.md. Work so far covers its Bo
   with the page visible); the coronary OBJs are open tubes (DoubleSide); the cutaway assumes the heart sits
   at the world origin.
 
+## 7f. What's DONE (3D encoding and inspection, 8 Oct; plan items E1-E7)
+
+- E1: risk.ts BAND_COLOR + configureBands(/metrics) + vesselBand; heartAnatomy.riskColor is now the band
+  colour (soft 1.5-point edges) and `undecided(p)` drives world-space stripes (atlasMaterials `stripes`
+  patch) on every artery; cards use the same hex; labels "LAD · 70% chance"; left main neutral;
+  ArteryTube.useVesselMaterial is the one shared, eased vessel material; App keeps the last estimate while
+  typing (HeartScene `pending` chip) so arteries never flash grey.
+- E2: MapSemantics caption + 6 rules + wall-motion chip (never drawn on the heart).
+- E3: frontend/src/anatomy/registry.ts (VESSELS, UNMODELLED, MODEL_TABS, SEGMENT_VESSEL) drives every view;
+  atlas GLB distance attributes are per artery (_D_LAD/_D_LCX/_D_RCA/_D_GROOVE).
+- E4: dpr [1, 1.5], ContactShadows frames=1 keyed on model+ready, PerformanceMonitor turns HD off below
+  ~24 fps; frame-time table in README.
+- E5: VesselInspector.tsx (band, observed rate, screening threshold, AUC + "read independently", top 3
+  drivers, territory + AHA segments, what is not shown; Esc closes).
+- E6: Bullseye.tsx in the dashboard; hover highlights the artery and tints its territory in all 3 models.
+- E7: heart.glb textures -> WebP (scripts/compress-heart.mjs): 7.55 -> 1.60 MB, visually unchanged.
+- Backend fix (256332f): display_attributions overwrote BBB instead of adding the tree member's share;
+  /explain returned 500 for the Low-risk preset. test_pipeline.py now checks N/LBBB/RBBB + all presets.
+
 ## 8. What's NEXT, in priority order
 
 Done on 8 Oct: physiological breakdown (requirement 3c), technical documentation
@@ -237,6 +256,7 @@ Track A is locked. Models are verified log-odds blends (AUC .943/.856/.761/.739)
 honest calibration; the UI is a validated, live-updating clinical form with plain-language explanations; the
 3D view is a CC BY realistic heart with our coronary tree fitted into its grooves, plus a BodyParts3D atlas heart
 in a ghosted chest whose 59 named coronary branches are coloured by their vessel's model (schematic heart as
-toggle and fallback). The approved week plan is docs/plan-3d-and-explanations.md. Docs done (5-page PDF, demo script, Devpost text). Commit + push to main after every verified
+toggle and fallback). One band colour scale everywhere, vessel inspector, bullseye, registry-driven views.
+The approved week plan is docs/plan-3d-and-explanations.md (B1-B3 and E1-E7 done; WS0/WS3-WS6 open). Docs done (5-page PDF, demo script, Devpost text). Commit + push to main after every verified
 change. Remaining: record the video, fill Devpost, team names.
 Gotchas in sections 6, 7b and 7d. Don't switch tracks.

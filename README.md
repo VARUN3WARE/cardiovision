@@ -112,6 +112,23 @@ calibration, literature comparison, limitations) · [demo video script](docs/dem
 - **Anatomy pins**: numbered annotations with short clinical notes.
 - Heartbeat animation at the patient's pulse rate.
 
+### 3D performance without a dedicated GPU
+
+Full-frame render time (scene plus post-processing), measured on a laptop's integrated GPU (Intel Alder Lake
+GT2, Mesa, Chrome) with the 3D panel at 676×757 px, device pixel ratio 1. Frames were timed synchronously
+(render, then a 1-pixel GPU read-back), median and range over repeated runs:
+
+| Heart model | HD on (AO, bloom, vignette) | HD off |
+|---|---|---|
+| Realistic (Sketchfab, textured) | 11 ms | 6 ms |
+| Atlas (BodyParts3D heart) | 14 ms (12–17) | 11 ms (4–11) |
+| Atlas in the chest (heart + 74k-triangle chest) | 12 ms (10–18) | 9 ms (7–9) |
+| Schematic (procedural) | 14 ms | 11 ms |
+
+Every configuration stays under 18 ms per frame (above 55 fps). The device pixel ratio is capped at 1.5,
+contact shadows are rendered once per model, and HD switches itself off if the frame rate stays below about
+24 fps. The asset sizes are small: Realistic heart 1.6 MB, Atlas heart 0.39 MB, chest 0.35 MB.
+
 ## Quickstart
 
 ### Prerequisites
