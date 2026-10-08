@@ -81,12 +81,16 @@ interface HeartSceneProps {
   /** Full results and validation metrics, for the vessel inspector. */
   result?: ExplainResponse | null;
   metrics?: MetricsResponse | null;
+  /** Artery highlighted from outside the scene (e.g. hovering the bullseye). */
+  highlight?: Vessel | null;
   selected: Vessel | null;
   onSelect: (vessel: Vessel | null) => void;
   bpm: number;
 }
 
-export default function HeartScene({ probs, pending = false, result = null, metrics = null, selected, onSelect, bpm }: HeartSceneProps) {
+export default function HeartScene({
+  probs, pending = false, result = null, metrics = null, highlight = null, selected, onSelect, bpm,
+}: HeartSceneProps) {
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [fx, setFx] = useState(true);
@@ -166,7 +170,7 @@ export default function HeartScene({ probs, pending = false, result = null, metr
                 <AtlasHeart
                   probs={probs}
                   selected={selected}
-                  hovered={hovered}
+                  hovered={hovered ?? highlight}
                   mode={mode}
                   xray={xray}
                   chest={chest ? layers : null}
@@ -184,7 +188,7 @@ export default function HeartScene({ probs, pending = false, result = null, metr
                 <SpecimenHeart
                   probs={probs}
                   selected={selected}
-                  hovered={hovered}
+                  hovered={hovered ?? highlight}
                   mode={mode}
                   pins={pins}
                   bpm={beating ? bpm : 0}
@@ -198,7 +202,7 @@ export default function HeartScene({ probs, pending = false, result = null, metr
             <Heart
               probs={probs}
               selected={selected}
-              hovered={hovered}
+              hovered={hovered ?? highlight}
               mode={mode}
               pins={pins}
               bpm={beating ? bpm : 0}
@@ -665,7 +669,7 @@ function Heart({ probs, selected, hovered, mode, pins, bpm, onSelect, onHover }:
         </group>
       </group>
       <group ref={ventricles}>
-        <Myocardium meshRef={myocardium} probs={probs} selected={selected} mode={mode} onSelect={onSelect} />
+        <Myocardium meshRef={myocardium} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} onSelect={onSelect} />
         <Veins />
         {ARTERIES.map((seg) => (
           <Artery
@@ -690,11 +694,13 @@ interface MyocardiumProps {
   meshRef: RefObject<THREE.Mesh>;
   probs: ArteryProbs | null;
   selected: Vessel | null;
+  /** Artery whose territory is highlighted: the selected one, else the hovered one. */
+  focus: Vessel | null;
   mode: ViewMode;
   onSelect: (v: Vessel | null) => void;
 }
 
-function Myocardium({ meshRef, probs, selected, mode, onSelect }: MyocardiumProps) {
+function Myocardium({ meshRef, probs, selected, focus, mode, onSelect }: MyocardiumProps) {
   const geometry = useMemo(() => buildMyocardium(), []);
   const { muscle } = getTextures();
 
@@ -720,15 +726,15 @@ function Myocardium({ meshRef, probs, selected, mode, onSelect }: MyocardiumProp
           tint.add(riskColor(probs[v], tmp).multiplyScalar(w[v]));
         }
         c.lerp(tint, 0.62 - 0.25 * f);
-      } else if (selected) {
-        // Highlight the myocardium supplied by the selected artery.
-        tint.copy(probs ? riskColor(probs[selected], tmp) : NEUTRAL_ARTERY);
-        c.lerp(tint, 0.55 * Math.max(0, (w[selected] - 0.35) / 0.65));
+      } else if (focus) {
+        // Highlight the myocardium supplied by the selected (or hovered) artery.
+        tint.copy(probs ? riskColor(probs[focus], tmp) : NEUTRAL_ARTERY);
+        c.lerp(tint, 0.55 * Math.max(0, (w[focus] - 0.35) / 0.65));
       }
       color.setXYZ(i, c.r, c.g, c.b);
     }
     color.needsUpdate = true;
-  }, [geometry, probs, selected, mode]);
+  }, [geometry, probs, focus, mode]);
 
   // Clicking the heart wall selects the artery that perfuses that region.
   const selectTerritory = (e: ThreeEvent<MouseEvent>) => {

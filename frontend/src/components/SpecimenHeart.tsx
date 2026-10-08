@@ -28,6 +28,7 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bp
   const gltf = useGLTF(SPECIMEN_URL, false, false); // the asset uses no Draco/Meshopt compression
   const prep = useMemo(() => prepareSpecimen(gltf.scene), [gltf.scene]);
   const meshRef = useRef<THREE.Mesh>(null);
+  const focus = selected ?? hovered;
   const beat = useRef<THREE.Group>(null);
   const phase = useRef(0);
 
@@ -65,17 +66,17 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bp
         c.setRGB(0, 0, 0);
         TARGETS.forEach((t, k) => c.add(riskColor(probs[t], tmp).multiplyScalar(T[i * 4 + k])));
         alpha = 0.55 * mask;
-      } else if (mask > 0 && selected) {
-        // Highlight the myocardium supplied by the selected artery.
-        c.copy(probs ? riskColor(probs[selected], tmp) : NEUTRAL_ARTERY);
-        alpha = 0.42 * mask * Math.max(0, (T[i * 4 + TARGETS.indexOf(selected)] - 0.35) / 0.65);
+      } else if (mask > 0 && focus) {
+        // Highlight the myocardium supplied by the selected (or hovered) artery.
+        c.copy(probs ? riskColor(probs[focus], tmp) : NEUTRAL_ARTERY);
+        alpha = 0.42 * mask * Math.max(0, (T[i * 4 + TARGETS.indexOf(focus)] - 0.35) / 0.65);
       }
       if (alpha > 0.01) any = true;
       color.setXYZW(i, c.r, c.g, c.b, alpha);
     }
     color.needsUpdate = true;
     setTinted(any);
-  }, [overlay, prep, probs, selected, mode]);
+  }, [overlay, prep, probs, focus, mode]);
 
   useFrame((_, dt) => {
     phase.current = (phase.current + (dt * bpm) / 60) % 1;

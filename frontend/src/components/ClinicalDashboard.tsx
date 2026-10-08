@@ -1,6 +1,7 @@
 import type { ExplainResponse, MetricsResponse, Target, TargetMetrics } from "../api/client";
 import { FIELD_LABEL } from "../fieldSpec";
 import { BAND_COLOR, bandStyle, formatPct, reliability, type Band } from "../risk";
+import Bullseye from "./Bullseye";
 import type { Preset } from "./FeatureInput";
 import type { Vessel } from "./HeartScene";
 
@@ -9,10 +10,12 @@ interface Props {
   metrics: MetricsResponse | null;
   selected: Vessel | null;
   onSelect: (v: Vessel | null) => void;
+  /** Hovering the bullseye highlights that artery in the 3D view. */
+  onHover?: (v: Vessel | null) => void;
   preset: Preset | null;
 }
 
-export default function ClinicalDashboard({ result, metrics, selected, onSelect, preset }: Props) {
+export default function ClinicalDashboard({ result, metrics, selected, onSelect, onHover = () => {}, preset }: Props) {
   if (!result) {
     return (
       <div className="text-sm text-gray-400">
@@ -77,6 +80,9 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
             Dashed cards: vessel models with limited discrimination (cross-validated AUC &lt; 0.75); treat as indicative.
           </div>
         )}
+        <div className="mt-3">
+          <Bullseye probs={result.vessel_probabilities} selected={selected} onHover={onHover} onSelect={onSelect} />
+        </div>
       </div>
 
       {discordant && (

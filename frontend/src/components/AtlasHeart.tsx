@@ -152,7 +152,7 @@ export default function AtlasHeart(props: Props) {
       <group ref={root} scale={ATLAS_SCALE}>
         <HoverTip setter={tipSetter} />
         <group ref={beat}>
-          <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
+          <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
           {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={xray} />}
           <group ref={vesselsRef}>
             {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={xray} sheen />}
@@ -196,6 +196,8 @@ interface WallProps {
   meshRef: RefObject<THREE.Mesh>;
   probs: ArteryProbs | null;
   selected: Vessel | null;
+  /** Artery whose territory is highlighted: the selected one, else the hovered one. */
+  focus: Vessel | null;
   mode: "arteries" | "territories";
   xray: boolean;
   onSelect: (v: Vessel | null) => void;
@@ -203,7 +205,7 @@ interface WallProps {
 }
 
 /** Ventricular myocardium: muscle with epicardial fat in the grooves; tinted by territory. */
-function Wall({ part, atlas, meshRef, probs, selected, mode, xray, onSelect, onPick }: WallProps) {
+function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSelect, onPick }: WallProps) {
   const { geometry } = part;
   const base = useMemo(() => {
     const pos = geometry.getAttribute("position");
@@ -238,14 +240,14 @@ function Wall({ part, atlas, meshRef, probs, selected, mode, xray, onSelect, onP
         tint.setRGB(0, 0, 0);
         TARGETS.forEach((t, k) => tint.add(riskColor(probs[t], tmp).multiplyScalar(T[i * 3 + k])));
         c.lerp(tint, 0.74 - 0.2 * fat);
-      } else if (selected) {
-        tint.copy(probs ? riskColor(probs[selected], tmp) : NEUTRAL_ARTERY);
-        c.lerp(tint, 0.5 * Math.max(0, (T[i * 3 + TARGETS.indexOf(selected)] - 0.35) / 0.65));
+      } else if (focus) {
+        tint.copy(probs ? riskColor(probs[focus], tmp) : NEUTRAL_ARTERY);
+        c.lerp(tint, 0.5 * Math.max(0, (T[i * 3 + TARGETS.indexOf(focus)] - 0.35) / 0.65));
       }
       color.setXYZ(i, c.r, c.g, c.b);
     }
     color.needsUpdate = true;
-  }, [geometry, base, atlas, probs, selected, mode]);
+  }, [geometry, base, atlas, probs, focus, mode]);
 
   const material = useMemo(() => patchMaterial(new THREE.MeshPhysicalMaterial({
     vertexColors: true,

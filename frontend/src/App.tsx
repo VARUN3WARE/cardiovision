@@ -32,6 +32,7 @@ export default function App() {
   const [info, setInfo] = useState<FeaturesResponse | null>(null);
   const [status, setStatus] = useState<ApiStatus>("checking");
   const [selected, setSelected] = useState<Vessel | null>(null);
+  const [highlight, setHighlight] = useState<Vessel | null>(null);
 
   const payload = useMemo(() => toPayload(values, quick), [values, quick]);
   const key = useMemo(() => JSON.stringify(payload), [payload]);
@@ -169,6 +170,7 @@ export default function App() {
               pending={stale}
               result={result}
               metrics={metrics}
+              highlight={highlight}
               selected={selected}
               onSelect={setSelected}
               bpm={bpm}
@@ -196,7 +198,7 @@ export default function App() {
             <div className={`space-y-4 transition-opacity ${stale ? "opacity-50" : ""}`}>
               <div className="rounded bg-slate-800 p-4">
                 <h2 className="mb-3 text-sm font-semibold text-gray-200">Risk estimate</h2>
-                <ClinicalDashboard result={result} metrics={metrics} selected={selected} onSelect={setSelected} preset={shownPreset} />
+                <ClinicalDashboard result={result} metrics={metrics} selected={selected} onSelect={setSelected} onHover={setHighlight} preset={shownPreset} />
               </div>
               <div className="rounded bg-slate-800 p-4">
                 <h2 className="mb-3 text-sm font-semibold text-gray-200">Why this estimate?</h2>
