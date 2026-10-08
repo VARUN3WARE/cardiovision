@@ -1,4 +1,6 @@
-> **Status: proposed, awaiting approval (8 Oct 2026).** Produced by a research + judge-panel planning workflow (4 researchers, 3 planners, 2 judges, synthesis). Decisions in section 6 are open.
+> **Status: approved; in progress (8 Oct 2026).** Produced by a research + judge-panel planning workflow (4 researchers, 3 planners, 2 judges, synthesis).
+>
+> **Progress.** BodyParts3D download approved (heart and chest). Done: B1 (asset pipeline: `scripts/bp3d/`, `npm run assets:bp3d`), B2 (Atlas heart: 59 named branches, branch picking and hover names, X-ray, territories), B3 (chest context with fly-in, cutaway and layer toggles; A/P/L/R/S/I view buttons instead of a view cube). Licence for derived GLBs: CC BY-SA 4.0 (option b). Open: decision 6.3 (default heart), FPS table (E4), and the remaining workstreams.
 
 # CardioVision: final plan to win Track A (8 to 14 Oct)
 

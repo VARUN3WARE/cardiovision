@@ -163,7 +163,7 @@ Gotchas found on Day 2:
 ## 7d. What's DONE (realistic 3D heart, 8 Oct)
 
 - frontend/public/models/heart.glb: "Realistic Human Heart" by neshallads, CC BY 4.0 (credited in the UI, README
-  and public/models/README.txt). Single mesh, ~12k verts, Y-up anatomical anterior pose, ~0.5 scale after its
+  and public/models/ATTRIBUTION.md). Single mesh, ~12k verts, Y-up anatomical anterior pose, ~0.5 scale after its
   node transforms; texture metalness channel is 0 (metalness forced to 0 anyway).
 - Coronary tree traced on the model's sculpted grooves (surface picks, model coordinates) in
   specimenAnatomy.ts; at load: BVH closest-point snapping + normal lift + smoothing. Territories by nearest
@@ -174,6 +174,34 @@ Gotchas found on Day 2:
 - Gotchas: pins/labels exactly on the surface get hidden by Html occlusion (lift them); vite.config dedupes
   three (three-mesh-bvh otherwise pulled a second copy); the model's low roughness glitters under bloom
   (roughness scaled x1.45).
+
+## 7e. What's DONE (BodyParts3D atlas heart + chest, 8 Oct; plan items B1-B3)
+
+The approved plan is docs/plan-3d-and-explanations.md. Work so far covers its BodyParts3D workstream.
+- Assets: scripts/bp3d/make_parts.py writes parts.json from the official index files (FMA concept -> FJ files;
+  LAD = FMA3862 + septals FMA3892, LCX = FMA3895, RCA = FMA50039 + PDA septals FMA3845, LM = FMA3855).
+  scripts/bp3d/fetch_bp3d.py range-fetches only those 181 OBJ members (CRC32-checked) into the gitignored
+  scripts/bp3d/cache/ (the archive server is slow: ~10 min). frontend/scripts/build-bp3d.mjs converts
+  (x, z, -y) mm -> m, welds, drops fragments <2%, simplifies (meshoptimizer), merges one mesh per part with a
+  per-vertex `_BRANCH` index (node extras list each branch's FJ id + FMA id + name), bakes `_VDIST` on the
+  ventricular wall (0.1 mm distance to LAD/LCX/RCA trees and to the groove vessels), meshopt-compresses.
+  `npm run assets:bp3d` does both. Output: public/models/bp3d_heart.glb (72k tris, 0.39 MB) and
+  bp3d_thorax.glb (74k tris, 0.35 MB); derived files CC BY-SA 4.0 (see ATTRIBUTION.md for why).
+- BP3D v4 has no lung surfaces (only bronchial/vascular trees), so the chest is skin (cropped z 1000-1450 mm),
+  ribs, costal cartilage, sternum, T1-T12, clavicles, scapulae, diaphragm, trachea + left main bronchus.
+- Runtime: atlasAnatomy.ts (dequantise + bake transforms, centre on ventricles+atria, territories =
+  softmin over baked distances, fat from groove distance, views from territory centroids, label anchors on
+  the trunks), atlasMaterials.ts (onBeforeCompile: simplex-noise derivative bump for UV-less tissue,
+  camera-facing cylinder cutaway through the chest, fresnel ghosting), AtlasHeart.tsx (wall with vertex
+  colours, tissue, veins, one eased-colour material per coronary tree, branch picking + hover read-outs,
+  X-ray, Thorax with layer toggles; Lambert shading for the chest to keep it cheap).
+- HeartScene: Realistic / Atlas / Schematic toggle (Realistic is still the default; plan gate G2 decides),
+  Chest (+ layer menu) and X-ray in Atlas mode, A/P/L/R/S/I view buttons, chest-to-heart fly-in (skipped
+  with prefers-reduced-motion), "Clicked structure" read-out, territory caveat caption, BodyParts3D credit.
+  Dev-only `window.__cv` exposes the R3F state for scripted checks (not in production builds).
+- Gotchas: rAF is throttled while the browser pane is hidden, so FPS measured there is meaningless (measure
+  with the page visible); the coronary OBJs are open tubes (DoubleSide); the cutaway assumes the heart sits
+  at the world origin.
 
 ## 8. What's NEXT, in priority order
 
@@ -199,14 +227,16 @@ docs/make_figures.py), demo script (docs/demo-script.md), Devpost text (docs/dev
 5. backend/app/shap_explainer.py -- the native-SHAP workaround (gotcha #1)
 6. backend/app/cardio_models.py -- production models + exact attributions
 7. docs/model-report.md -- results, calibration, limitations
-8. frontend/src/components/specimenAnatomy.ts + SpecimenHeart.tsx -- realistic heart integration
+8. frontend/src/components/specimenAnatomy.ts + SpecimenHeart.tsx -- realistic heart integration;
+   atlasAnatomy.ts + AtlasHeart.tsx + atlasMaterials.ts -- BodyParts3D atlas heart and chest
 9. backend/models/metrics.json -- current model performance
 
 ## 10. TL;DR for Claude
 
 Track A is locked. Models are verified log-odds blends (AUC .943/.856/.761/.739) with exact attributions and
 honest calibration; the UI is a validated, live-updating clinical form with plain-language explanations; the
-3D view is a CC BY realistic heart with our coronary tree fitted into its grooves (schematic heart as toggle and
-fallback). Docs done (5-page PDF, demo script, Devpost text). Commit + push to main after every verified
+3D view is a CC BY realistic heart with our coronary tree fitted into its grooves, plus a BodyParts3D atlas heart
+in a ghosted chest whose 59 named coronary branches are coloured by their vessel's model (schematic heart as
+toggle and fallback). The approved week plan is docs/plan-3d-and-explanations.md. Docs done (5-page PDF, demo script, Devpost text). Commit + push to main after every verified
 change. Remaining: record the video, fill Devpost, team names.
 Gotchas in sections 6, 7b and 7d. Don't switch tracks.
