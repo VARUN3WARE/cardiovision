@@ -8,6 +8,8 @@ import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import AtlasHeart, { type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
+import VesselInspector from "./VesselInspector";
+import type { ExplainResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
 import { ATLAS_CREDIT, atlasAvailable } from "./atlasAnatomy";
@@ -70,33 +72,21 @@ function getTextures() {
 
 export type { ArteryProbs, Vessel };
 
-export const VESSEL_INFO: Record<Vessel, { name: string; territory: string }> = {
-  lad: {
-    name: "Left Anterior Descending",
-    territory: "Anterior LV wall, anterior two-thirds of the septum, apex",
-  },
-  lcx: {
-    name: "Left Circumflex",
-    territory: "Lateral and posterolateral LV wall",
-  },
-  rca: {
-    name: "Right Coronary Artery",
-    territory: "Right ventricle, inferior LV wall, posterior septum (via PDA)",
-  },
-};
-
 type ViewMode = "arteries" | "territories";
 
 interface HeartSceneProps {
   probs: ArteryProbs | null;
   /** Inputs changed since these estimates were computed. */
   pending?: boolean;
+  /** Full results and validation metrics, for the vessel inspector. */
+  result?: ExplainResponse | null;
+  metrics?: MetricsResponse | null;
   selected: Vessel | null;
   onSelect: (vessel: Vessel | null) => void;
   bpm: number;
 }
 
-export default function HeartScene({ probs, pending = false, selected, onSelect, bpm }: HeartSceneProps) {
+export default function HeartScene({ probs, pending = false, result = null, metrics = null, selected, onSelect, bpm }: HeartSceneProps) {
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [fx, setFx] = useState(true);
@@ -141,6 +131,11 @@ export default function HeartScene({ probs, pending = false, selected, onSelect,
     if (m === "atlas" && chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
   };
   const showPick = pick && (pick.vessel === "lm" || pick.vessel === selected) ? pick : null;
+  const rwma = useMemo(() => {
+    const exp = result?.explanations.cad;
+    const i = exp ? exp.feature_names.indexOf("Region RWMA") : -1;
+    return exp && i >= 0 ? exp.feature_values[i] : null;
+  }, [result]);
 
   useEffect(() => {
     document.body.style.cursor = hovered ? "pointer" : "auto";
@@ -380,41 +375,23 @@ export default function HeartScene({ probs, pending = false, selected, onSelect,
         ))}
       </div>
 
-      {/* Selected vessel info */}
-      {(selected || showPick) && (
-        <div className="absolute right-3 top-12 max-w-[260px] rounded bg-slate-900/90 p-3 text-xs">
-          {selected && (
-            <>
-              <div className="font-semibold text-white">
-                {selected.toUpperCase()} · {VESSEL_INFO[selected].name}
-              </div>
-              <div className="mt-1 text-gray-400">Supplies: {VESSEL_INFO[selected].territory}</div>
-              {probs && (
-                <div className="mt-1 text-gray-200">
-                  Chance of ≥50% narrowing: <b>{formatPct(probs[selected])}</b> ({vesselBand(probs[selected]).toLowerCase()} band)
-                </div>
-              )}
-            </>
-          )}
-          {showPick && (
-            <div className={`${selected ? "mt-2 border-t border-slate-700 pt-2" : ""} text-gray-300`}>
-              <div className="text-[10px] uppercase tracking-wide text-gray-500">Clicked structure</div>
-              <div className="text-white first-letter:uppercase">{showPick.branch.name}</div>
-              <div className="text-gray-500">
-                {showPick.branch.fma} · BodyParts3D {showPick.branch.fj}
-              </div>
-              {showPick.vessel === "lm" ? (
-                <div className="mt-1 text-gray-400">
-                  Left main: not labelled in this dataset, so no model output; shown neutral.
-                </div>
-              ) : (
-                <div className="mt-1 text-gray-400">
-                  Part of {showPick.part} ({showPick.partFma}) → coloured by the {showPick.vessel.toUpperCase()} model.
-                  Branches share their artery's single estimate; position along the artery is not predicted.
-                </div>
-              )}
-            </div>
-          )}
+      {/* Selected vessel: inspector card; a clicked left-main branch gets a short note instead. */}
+      {selected ? (
+        <VesselInspector
+          vessel={selected}
+          result={result}
+          metrics={metrics}
+          pick={showPick}
+          onClose={() => {
+            onSelect(null);
+            setPick(null);
+          }}
+        />
+      ) : showPick?.vessel === "lm" && (
+        <div className="absolute right-3 top-12 max-w-[260px] rounded bg-slate-900/90 p-3 text-xs text-gray-300">
+          <div className="text-white first-letter:uppercase">{showPick.branch.name}</div>
+          <div className="text-gray-500">{showPick.branch.fma} · BodyParts3D {showPick.branch.fj}</div>
+          <div className="mt-1 text-gray-400">Left main: not labelled in this dataset, so no model output; shown neutral.</div>
         </div>
       )}
 
@@ -441,7 +418,8 @@ export default function HeartScene({ probs, pending = false, selected, onSelect,
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-3 left-3 w-56 text-[10px] text-gray-400">
+      <div className="absolute bottom-3 left-3 w-60 text-[10px] text-gray-400">
+        <MapSemantics rwma={rwma} />
         {mode === "territories" && (
           <div className="mb-2 rounded bg-slate-900/80 p-1.5 text-gray-300">
             Muscle shaded by the artery that usually supplies it (standard anatomy, right dominance assumed).
@@ -507,6 +485,44 @@ function FitCamera() {
     camera.position.setLength(6.8 * Math.min(1.4, Math.max(1, 0.8 / aspect)));
   }, [camera, size.width, size.height]);
   return null;
+}
+
+/**
+ * What the map does and does not show (the brief: clinical and ECG findings are not anatomical
+ * coordinates, and wall-motion data is not a lesion map). Always visible, with the rules on demand.
+ */
+function MapSemantics({ rwma }: { rwma: number | null }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-2 space-y-1">
+      <div className="flex items-start gap-1 rounded bg-slate-900/80 p-1.5 text-gray-300">
+        <span>Vessel-level estimates: one colour per artery. Position along the artery is not predicted.</span>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label="What this map shows"
+          className="shrink-0 rounded-full border border-gray-500 px-1 leading-tight text-gray-300 hover:bg-slate-700"
+        >
+          i
+        </button>
+      </div>
+      {open && (
+        <ol className="list-decimal space-y-0.5 rounded bg-slate-900/95 p-2 pl-5 text-gray-300">
+          <li>Each label is one model&apos;s chance of ≥50% narrowing somewhere in that artery.</li>
+          <li>Each artery tree has a single colour; nothing varies along it.</li>
+          <li>Branches take their parent artery&apos;s colour (an assumption: they have no labels of their own).</li>
+          <li>Territories assume standard anatomy with right dominance.</li>
+          <li>Findings such as ECG changes or wall motion are model inputs, not locations on the heart.</li>
+          <li>The anatomy is a reference model, not this patient&apos;s imaging.</li>
+        </ol>
+      )}
+      {rwma !== null && rwma > 0 && (
+        <div className="rounded bg-slate-900/80 p-1.5 text-gray-300">
+          Wall-motion abnormality score {rwma}: location not recorded in the data, so not drawn on the heart.
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Three band swatches with their ranges; the middle (undecided) band is striped, as in 3D. */

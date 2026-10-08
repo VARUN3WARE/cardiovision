@@ -167,6 +167,8 @@ export default function App() {
               // Keep the last estimate while inputs change (colours glide to the new one; no grey flash).
               probs={result ? result.vessel_probabilities : null}
               pending={stale}
+              result={result}
+              metrics={metrics}
               selected={selected}
               onSelect={setSelected}
               bpm={bpm}
