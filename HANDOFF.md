@@ -222,6 +222,19 @@ The approved plan is docs/plan-3d-and-explanations.md. Work so far covers its Bo
 - Backend fix (256332f): display_attributions overwrote BBB instead of adding the tree member's share;
   /explain returned 500 for the Low-risk preset. test_pipeline.py now checks N/LBBB/RBBB + all presets.
 
+## 7g. Medical-statement audit (9 Oct)
+
+Every clinical statement in the UI, API descriptions, presets and demo script was checked. Verified correct:
+Diamond-Forrester values (= ACC/AHA 2002 Table 4; asymptomatic row from Diamond & Forrester 1979), CKD-EPI
+2021 eGFR, AIP unit conversions, ATP III age risk factor, ADA FBS >= 126, Cerqueira 2002 AHA segment map,
+vessel territories, anatomy-pin notes, CAD = >=50% narrowing, 216/303 = 71% CAD. Corrected: LV pin omitted
+the RCA's inferior wall; "Obesity" is the dataset's BMI >= 25 flag (WHO: overweight); "Reduced EF (<50%)"
+-> "EF below 50%"; "NYHA class" -> "Functional class" (dataset term, NYHA assumed); "Wall-motion score" ->
+"Regional wall-motion abnormality" grade 0-4; summary sentence now uses the card's band and attribution
+wording ("driven mainly by", not "because of"); angiography verdicts say "<50% / >=50% narrowing" (not
+"normal"); inspector states the threshold's measured sensitivity/specificity; "premature" removed from FH;
+demo script no longer says the LCX card is dashed (AUC 0.761 >= 0.75).
+
 ## 8. What's NEXT, in priority order
 
 Done on 8 Oct: physiological breakdown (requirement 3c), technical documentation

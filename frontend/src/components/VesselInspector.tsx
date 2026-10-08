@@ -77,8 +77,14 @@ export default function VesselInspector({ vessel, result, metrics, pick, onClose
             </div>
           )}
           <div className="mt-1 text-gray-400">
-            {r.probability >= r.threshold ? "Above" : "Below"} this model's screening threshold ({formatPct(r.threshold)},
-            tuned to catch most cases): {r.probability >= r.threshold ? "flagged for attention" : "not flagged"}.
+            {r.probability >= r.threshold ? "Above" : "Below"} this model's decision threshold ({formatPct(r.threshold)}):{" "}
+            {r.probability >= r.threshold ? "flagged" : "not flagged"}.
+            {m && (
+              <>
+                {" "}At this threshold the model flagged {formatPct(m.operating_points.f1_threshold.recall)} of patients
+                with this narrowing in validation (specificity {formatPct(m.operating_points.f1_threshold.specificity)}).
+              </>
+            )}
           </div>
         </div>
       )}

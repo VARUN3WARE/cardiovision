@@ -45,8 +45,9 @@ ECG_ABN = ["Q Wave", "St Elevation", "St Depression", "Tinversion", "LVH", "Poor
 SKEWED = ["TG", "FBS", "CR", "ESR", "BUN", "WBC", "PLT"]
 CHEST_PAIN = ["Typical Chest Pain", "Atypical", "Nonanginal"]
 
-# Diamond-Forrester pre-test probability of CAD (%), ACC/AHA 2002 stable-angina table.
-# rows: age band 30-39, 40-49, 50-59, 60+ ; values (male, female)
+# Pre-test probability of CAD (%). Symptomatic rows: ACC/AHA 2002 chronic stable angina guideline,
+# Table 4 (combined Diamond-Forrester and CASS data). Asymptomatic row: Diamond & Forrester, NEJM 1979.
+# rows: age band 30-39, 40-49, 50-59, 60-69 (ages <30 use the first band, >=70 the last); values (male, female)
 _DF = {
     3: [(76, 26), (87, 55), (93, 73), (94, 86)],  # typical angina
     2: [(34, 12), (51, 22), (65, 31), (72, 51)],  # atypical angina

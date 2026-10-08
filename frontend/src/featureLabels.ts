@@ -10,7 +10,8 @@ export const FEATURE_LABELS: Record<string, { label: string; unit?: string }> = 
   "Current Smoker": { label: "Current smoker" },
   "EX-Smoker": { label: "Ex-smoker" },
   FH: { label: "Family history of CAD" },
-  Obesity: { label: "Obesity" },
+  // The dataset's "Obesity" flag is set at BMI >= 25 (WHO: overweight 25-29.9, obese >= 30).
+  Obesity: { label: "BMI ≥ 25 (dataset 'obesity' flag)" },
   CRF: { label: "Chronic renal failure" },
   CVA: { label: "Prior stroke (CVA)" },
   "Airway disease": { label: "Airway disease" },
@@ -26,7 +27,7 @@ export const FEATURE_LABELS: Record<string, { label: string; unit?: string }> = 
   "Diastolic Murmur": { label: "Diastolic murmur" },
   "Typical Chest Pain": { label: "Typical chest pain (angina)" },
   Dyspnea: { label: "Dyspnea" },
-  "Function Class": { label: "NYHA class" },
+  "Function Class": { label: "Functional class" },
   Atypical: { label: "Atypical chest pain" },
   Nonanginal: { label: "Non-anginal chest pain" },
   "Exertional CP": { label: "Exertional chest pain" },
@@ -53,22 +54,22 @@ export const FEATURE_LABELS: Record<string, { label: string; unit?: string }> = 
   Neut: { label: "Neutrophils", unit: "%" },
   PLT: { label: "Platelets", unit: "×10³/µL" },
   "EF-TTE": { label: "Ejection fraction (echo)", unit: "%" },
-  "Region RWMA": { label: "Wall-motion abnormality score" },
+  "Region RWMA": { label: "Regional wall-motion abnormality" },
   VHD: { label: "Valvular heart disease" },
   // Derived clinical scores computed by the model from the inputs above.
   "DF pretest prob": { label: "Pre-test probability (Diamond-Forrester)" },
   "Risk factor count": { label: "Number of cardiac risk factors" },
   "ECG abnormality count": { label: "Number of ECG abnormalities" },
   "Chest pain class": { label: "Chest pain type" },
-  "RWMA present": { label: "Any wall-motion abnormality" },
+  "RWMA present": { label: "Any regional wall-motion abnormality" },
   "TG/HDL": { label: "Triglyceride / HDL ratio" },
   "LDL/HDL": { label: "LDL / HDL ratio" },
   "AIP log(TG/HDL)": { label: "Atherogenic index of plasma" },
   "Age x Male": { label: "Age (male)" },
   eGFR: { label: "Kidney function (eGFR)", unit: "mL/min/1.73m²" },
   NLR: { label: "Neutrophil / lymphocyte ratio" },
-  "EF below 50": { label: "Reduced ejection fraction (<50%)" },
-  "FBS 126+": { label: "Diabetic-range glucose (≥126)" },
+  "EF below 50": { label: "Ejection fraction below 50%" },
+  "FBS 126+": { label: "Fasting glucose ≥ 126 mg/dL (diabetic range)" },
   "Systolic BP 140+": { label: "Systolic BP ≥ 140" },
 };
 
@@ -94,7 +95,7 @@ const BINARY = new Set([
 export function formatFeatureValue(name: string, value: number): string {
   if (CATEGORY_DISPLAY[name]) return CATEGORY_DISPLAY[name][value] ?? String(value);
   if (BINARY.has(name) || DERIVED_FLAGS.has(name)) return value >= 0.5 ? "Yes" : "No";
-  if (name === "Region RWMA") return value === 0 ? "None" : `Score ${value}`;
+  if (name === "Region RWMA") return value === 0 ? "None" : `Grade ${value} of 4`;
   if (name === "DF pretest prob") return `${Math.round(value * 100)}%`;
   if (name === "Chest pain class") return CHEST_PAIN_CLASS[value] ?? String(value);
   if (name === "Age x Male") return value === 0 ? "Female" : `${value} yr`;

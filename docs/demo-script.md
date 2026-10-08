@@ -53,8 +53,8 @@ Correct it to 58.
 
 > The overall estimate is shown with a likelihood band, and next to it the rate actually observed in
 > validation, for example "In validation, 93% of patients in this band had CAD on angiography." Each vessel
-> has its own probability and band, plus its cross-validated AUC. The LCX and RCA models are weaker, so their
-> cards are dashed and labelled as indicative. We would rather show that than hide it.
+> has its own probability and band, plus its cross-validated AUC. The LCX and RCA models are weaker (AUC 0.76
+> and 0.74); the RCA card, below 0.75, is dashed and labelled as indicative. We would rather show that than hide it.
 
 **Screen:** click **Single-vessel (LAD)** under "Real patients from the dataset".
 

@@ -2,7 +2,7 @@
   {
     "id": "low",
     "label": "Low risk",
-    "description": "Normal angiogram, no stenosis",
+    "description": "no ≥50% stenosis in any artery",
     "patient_index": 143,
     "ground_truth": {
       "cad": false,
@@ -76,7 +76,7 @@
   {
     "id": "lad",
     "label": "Single-vessel (LAD)",
-    "description": "Isolated LAD stenosis",
+    "description": "≥50% stenosis of the LAD only",
     "patient_index": 171,
     "ground_truth": {
       "cad": true,
@@ -150,7 +150,7 @@
   {
     "id": "rca",
     "label": "Single-vessel (RCA)",
-    "description": "Isolated RCA stenosis",
+    "description": "≥50% stenosis of the RCA only",
     "patient_index": 73,
     "ground_truth": {
       "cad": true,
@@ -224,7 +224,7 @@
   {
     "id": "triple",
     "label": "Three-vessel disease",
-    "description": "LAD + LCX + RCA stenosis",
+    "description": "≥50% stenosis of the LAD, LCX and RCA",
     "patient_index": 173,
     "ground_truth": {
       "cad": true,
@@ -298,7 +298,7 @@
   {
     "id": "uncertain",
     "label": "Uncertain case",
-    "description": "CAD; stenosis in LAD, LCX",
+    "description": "CAD; ≥50% stenosis of the LAD, LCX",
     "patient_index": 281,
     "ground_truth": {
       "cad": true,

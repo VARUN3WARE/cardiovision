@@ -38,8 +38,8 @@ class PatientFeatures(BaseModel):
     HTN: Flag = Field(None, ge=0, le=1, description="Hypertension")
     CurrentSmoker: Flag = Field(None, ge=0, le=1)
     EX_Smoker: Flag = Field(None, ge=0, le=1)
-    FH: Flag = Field(None, ge=0, le=1, description="Family history of premature CAD")
-    Obesity: YN = Field(None, description="Derived: BMI >= 25")
+    FH: Flag = Field(None, ge=0, le=1, description="Family history of CAD (dataset 'FH')")
+    Obesity: YN = Field(None, description="Derived: BMI >= 25 (the dataset's 'Obesity' flag; WHO calls 25-29.9 overweight)")
     CRF: YN = Field(None, description="Chronic renal failure")
     CVA: YN = Field(None, description="Prior stroke")
     AirwayDisease: YN = None
@@ -47,7 +47,7 @@ class PatientFeatures(BaseModel):
     CHF: YN = Field(None, description="Congestive heart failure")
     DLP: YN = Field(None, description="Dyslipidemia")
     # Examination / symptoms
-    BP: Optional[float] = Field(None, ge=60, le=260, description="Systolic blood pressure (mmHg)")
+    BP: Optional[float] = Field(None, ge=60, le=260, description="Blood pressure (mmHg); the dataset records one value, in the systolic range")
     PR: Optional[float] = Field(None, ge=30, le=220, description="Pulse rate (bpm)")
     Edema: Flag = Field(None, ge=0, le=1)
     WeakPeripheralPulse: YN = None
@@ -56,7 +56,7 @@ class PatientFeatures(BaseModel):
     DiastolicMurmur: YN = None
     TypicalChestPain: Flag = Field(None, ge=0, le=1, description="Typical angina")
     Dyspnea: YN = None
-    FunctionClass: Optional[int] = Field(None, ge=0, le=4, description="NYHA class (0 = none)")
+    FunctionClass: Optional[int] = Field(None, ge=0, le=4, description="Functional class as coded in the dataset (0-3; NYHA-style grading assumed, 0 = not limited / not recorded)")
     Atypical: YN = Field(None, description="Atypical chest pain")
     Nonanginal: YN = Field(None, description="Non-anginal chest pain")
     LowTHAng: YN = Field(None, description="Low-threshold angina")
@@ -85,7 +85,7 @@ class PatientFeatures(BaseModel):
     PLT: Optional[float] = Field(None, ge=10, le=1500, description="Platelets (x1000/uL)")
     # Echo
     EF_TTE: Optional[float] = Field(None, ge=5, le=90, description="Ejection fraction, transthoracic echo (%)")
-    RegionRWMA: Optional[int] = Field(None, ge=0, le=4, description="Regional wall motion abnormality extent score (0 = none)")
+    RegionRWMA: Optional[int] = Field(None, ge=0, le=4, description="Dataset 'Region RWMA' grade, 0-4 (0 = none; higher = more extensive; location not recorded)")
     VHD: Optional[Literal["N", "mild", "Moderate", "Severe"]] = Field(None, description="Valvular heart disease")
 
     @model_validator(mode="after")

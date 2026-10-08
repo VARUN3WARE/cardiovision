@@ -533,7 +533,8 @@ function MapSemantics({ rwma }: { rwma: number | null }) {
       )}
       {rwma !== null && rwma > 0 && (
         <div className="rounded bg-slate-900/80 p-1.5 text-gray-300">
-          Wall-motion abnormality score {rwma}: location not recorded in the data, so not drawn on the heart.
+          Regional wall-motion abnormality grade {rwma} of 4: where it is was not recorded in the data, so it is
+          not drawn on the heart.
         </div>
       )}
     </div>

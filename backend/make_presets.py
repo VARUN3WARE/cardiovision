@@ -41,13 +41,13 @@ def main():
 
     vessels = P[["lad", "lcx", "rca"]]
     candidates = [
-        ("low", "Low risk", "Normal angiogram, no stenosis",
+        ("low", "Low risk", "no ≥50% stenosis in any artery",
          normal, -P.max(axis=1)),
-        ("lad", "Single-vessel (LAD)", "Isolated LAD stenosis",
+        ("lad", "Single-vessel (LAD)", "≥50% stenosis of the LAD only",
          sten["lad"] & ~sten["lcx"] & ~sten["rca"], P["lad"] - P[["lcx", "rca"]].max(axis=1)),
-        ("rca", "Single-vessel (RCA)", "Isolated RCA stenosis",
+        ("rca", "Single-vessel (RCA)", "≥50% stenosis of the RCA only",
          ~sten["lad"] & ~sten["lcx"] & sten["rca"], P["rca"] - P[["lad", "lcx"]].max(axis=1)),
-        ("triple", "Three-vessel disease", "LAD + LCX + RCA stenosis",
+        ("triple", "Three-vessel disease", "≥50% stenosis of the LAD, LCX and RCA",
          sten["lad"] & sten["lcx"] & sten["rca"], vessels.min(axis=1)),
         # An honest borderline case: CAD present but the vessel models are unsure.
         ("uncertain", "Uncertain case", "CAD with a borderline vessel picture",
@@ -74,7 +74,7 @@ def main():
         row = df.loc[idx]
         gt = {"cad": bool(row["Cath"] == "CAD"), **{v: bool(sten[v][idx]) for v in ("lad", "lcx", "rca")}}
         if key == "uncertain":
-            truth = "CAD; stenosis in " + (", ".join(v.upper() for v in ("lad", "lcx", "rca") if gt[v]) or "no major vessel")
+            truth = "CAD; ≥50% stenosis of the " + (", ".join(v.upper() for v in ("lad", "lcx", "rca") if gt[v]) or "no major vessel")
         presets.append({
             "id": key,
             "label": label,

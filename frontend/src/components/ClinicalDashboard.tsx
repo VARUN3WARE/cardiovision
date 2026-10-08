@@ -114,7 +114,7 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
 
       {preset && (
         <div className="rounded border border-slate-700 bg-slate-900/60 p-2 text-[11px] text-gray-400">
-          <b className="text-gray-200">Dataset patient #{preset.patient_index}</b>: angiography showed{" "}
+          <b className="text-gray-200">Dataset patient #{preset.patient_index}</b>. Angiography:{" "}
           <b className="text-gray-200">{preset.description}</b>. The live model was trained on this patient, so its score
           is optimistic; the <i>held-out</i> estimates come from models that never saw this patient.
         </div>
@@ -140,11 +140,12 @@ function GroundTruth({ target, preset, threshold, compact }: {
   const badge = call === truth
     ? { text: "match", cls: "text-green-400" }
     : call ? { text: "false alarm", cls: "text-amber-400" } : { text: "missed", cls: "text-red-400" };
-  const truthText = target === "cad" ? (truth ? "CAD present" : "no CAD") : truth ? "≥50% narrowing" : "no narrowing";
+  // Labels in this dataset mean >=50% diameter narrowing; "no" does not mean a plaque-free artery.
+  const truthText = target === "cad" ? (truth ? "CAD (≥50% narrowing)" : "no ≥50% narrowing") : truth ? "≥50% narrowing" : "no ≥50% narrowing";
   if (compact) {
     return (
       <div className="mt-1 border-t border-slate-700 pt-1 text-[10px] leading-tight text-gray-400">
-        <div>Angio: {truth ? "stenosis" : "normal"}</div>
+        <div>Angio: {truth ? "≥50%" : "<50%"} narrowing</div>
         <div>Held-out {formatPct(heldOut)} <span className={badge.cls}>· {badge.text}</span></div>
       </div>
     );

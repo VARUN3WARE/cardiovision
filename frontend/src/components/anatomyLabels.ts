@@ -45,7 +45,7 @@ export const ANATOMY_LABELS: AnatomyLabel[] = [
   },
   {
     id: "laa", name: "Left atrial appendage",
-    note: "Sits over the origin of the left circumflex artery; a common site of thrombus in atrial fibrillation.",
+    note: "Lies over the proximal left circumflex artery; a common site of thrombus in atrial fibrillation.",
     position: new THREE.Vector3(0.98, 0.66, 0.22),
   },
   {
@@ -55,7 +55,7 @@ export const ANATOMY_LABELS: AnatomyLabel[] = [
   },
   {
     id: "lv", name: "Left ventricle",
-    note: "Thick-walled systemic pump forming the left border; supplied by the LAD and LCX.",
+    note: "Thick-walled systemic pump forming most of the left border; supplied by the LAD and LCX, and its inferior wall by the RCA (via the PDA) in right-dominant hearts.",
     position: onVentricle(0.55, 0.35),
   },
   {
@@ -65,7 +65,7 @@ export const ANATOMY_LABELS: AnatomyLabel[] = [
   },
   {
     id: "ivg", name: "Anterior interventricular groove",
-    note: "Marks the septum on the surface; carries the LAD and the great cardiac vein in epicardial fat.",
+    note: "Marks the septum on the surface; carries the LAD and the anterior interventricular vein (start of the great cardiac vein) in epicardial fat.",
     position: onVentricle(0.42, 1.12, 0.09),
   },
 ];

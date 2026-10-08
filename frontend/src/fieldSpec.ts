@@ -48,8 +48,9 @@ export const SECTIONS: Section[] = [
       yn("LowTHAng", "Low-threshold angina"),
       yn("Dyspnea", "Dyspnea"),
       {
-        key: "FunctionClass", label: "NYHA class", kind: "select",
-        options: [["0", "None (0)"], ["1", "I"], ["2", "II"], ["3", "III"], ["4", "IV (not in training data)"]],
+        key: "FunctionClass", label: "Functional class", kind: "select",
+        options: [["0", "0 – not limited / not recorded"], ["1", "I"], ["2", "II"], ["3", "III"], ["4", "IV (not in training data)"]],
+        hint: "The dataset's 'Function Class' (coded 0–3). It is not defined further; NYHA-style grading is assumed.",
       },
     ],
   },
@@ -65,7 +66,9 @@ export const SECTIONS: Section[] = [
   {
     id: "vitals", title: "Vitals & examination",
     fields: [
-      num("BP", "Systolic BP", "mmHg", 60, 260, 1, { quick: true }),
+      num("BP", "Systolic BP", "mmHg", 60, 260, 1, {
+        quick: true, hint: "The dataset records one blood-pressure value (90–190 mmHg, i.e. the systolic range)",
+      }),
       num("PR", "Pulse rate", "bpm", 30, 220),
       flag("Edema", "Edema"),
       yn("WeakPeripheralPulse", "Weak peripheral pulse"),
@@ -79,9 +82,9 @@ export const SECTIONS: Section[] = [
     fields: [
       num("EF_TTE", "Ejection fraction", "%", 5, 90, 1, { quick: true }),
       {
-        key: "RegionRWMA", label: "Wall-motion abnormality score", kind: "select", quick: true,
-        options: [["0", "0 – none"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4 – extensive"]],
-        hint: "Regional wall-motion abnormality extent (0–4)",
+        key: "RegionRWMA", label: "Regional wall-motion abnormality", kind: "select", quick: true,
+        options: [["0", "0 – none"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4 – most extensive"]],
+        hint: "The dataset's 'Region RWMA' grade (0–4). Higher means more extensive (ejection fraction falls as it rises); where the abnormality is is not recorded.",
       },
       {
         key: "VHD", label: "Valvular heart disease", kind: "select",
@@ -156,7 +159,7 @@ export const FIELD_LABEL: Record<string, string> = {
   CurrentSmoker: "Current smoker",
   EX_Smoker: "Ex-smoker",
   BMI: "BMI",
-  Obesity: "Obesity (BMI ≥ 25)",
+  Obesity: "BMI ≥ 25 (dataset 'Obesity' flag)",
 };
 
 export type FormValues = Record<string, string>; // "" = not entered

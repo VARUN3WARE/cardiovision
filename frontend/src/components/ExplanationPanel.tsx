@@ -58,7 +58,7 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
   const restShap = ranked.slice(TOP_N).reduce((s, r) => s + r.shap, 0);
   const m = metrics?.metrics[model];
   const weak = m ? reliability(m.cv.roc_auc.mean).weak : false;
-  const what = model === "cad" ? "coronary artery disease" : `${model.toUpperCase()} stenosis`;
+  const what = model === "cad" ? "coronary artery disease" : `≥50% narrowing of the ${model.toUpperCase()}`;
 
   // Waterfall in probability points, adding the top drivers in order of magnitude.
   let acc = exp.base_value;
@@ -85,7 +85,7 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
         ))}
       </div>
 
-      <p className="text-sm text-gray-200">{summarySentence(ranked, probability, what)}</p>
+      <p className="text-sm text-gray-200">{summarySentence(ranked, probability, result.results[model].band, what)}</p>
       {weak && m && (
         <p className="text-[11px] text-amber-300">
           This vessel model is weaker (cross-validated AUC {m.cv.roc_auc.mean.toFixed(2)}): treat these drivers as indicative only.
@@ -224,14 +224,18 @@ function pts(delta: number) {
   return `${v > 0 ? "+" : "−"}${Math.abs(v)} pts`;
 }
 
-function summarySentence(ranked: Row[], p: number, what: string) {
-  const level = p >= 0.66 ? "high" : p >= 0.33 ? "intermediate" : "low";
+/**
+ * One-sentence summary. The likelihood word is the same band shown on the cards, and the wording
+ * describes what drove the model's estimate (associations in this referral cohort), not causes.
+ */
+function summarySentence(ranked: Row[], p: number, band: string, what: string) {
+  const level = band === "Higher" ? "higher likelihood" : band === "Lower" ? "lower likelihood" : "intermediate likelihood, undecided";
   const fmt = (r: Row) => r.imputed ? r.label.toLowerCase() + " (typical value)" : describe(r);
   const ups = ranked.filter((r) => r.shap > 0.15).slice(0, 3).map(fmt);
   const down = ranked.find((r) => r.shap < -0.15);
-  let s = `Estimated probability of ${what} is ${level} (${formatPct(p)})`;
-  if (ups.length) s += `, mainly because of ${joinList(ups)}`;
-  if (down) s += `${ups.length ? ";" : ","} ${fmt(down)} lowered it`;
+  let s = `The model's estimated probability of ${what} is ${formatPct(p)} (${level})`;
+  if (ups.length) s += `, driven mainly by ${joinList(ups)}`;
+  if (down) s += `${ups.length ? ";" : ","} ${fmt(down)} pulled it down`;
   return s + ".";
 }
 
