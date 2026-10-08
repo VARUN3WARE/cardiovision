@@ -62,7 +62,14 @@ See [docs/model-report.md](docs/model-report.md) for methods, operating points, 
 - **Honest results display**: whole-percent probabilities, risk bands with the event rate actually observed in
   validation, each model's cross-validated AUC, weaker vessel models marked, disagreement between the CAD and
   vessel models flagged, safety disclaimer always visible and included in every API response.
-- **Anatomical 3D heart** (procedural, no external mesh or image assets): ventricles, crinkled atrial
+- **Realistic 3D heart** (default): a sculpted, textured heart model (credit below) with our own coronary tree
+  fitted onto it. The LAD, diagonals, LCX, obtuse marginals, RCA, RV branch and PDA were traced on the model's
+  sculpted grooves; at load time each path is snapped onto the surface (BVH closest point), lifted along the
+  normal and smoothed, so the risk-coloured vessels lie in the real grooves. Perfusion territories are computed
+  per vertex from the nearest artery tree and masked to the ventricles below the AV groove; clicking the wall,
+  camera focus, labels, anatomy pins and the heartbeat all work on this model.
+- **Schematic 3D heart** (toggle, and automatic fallback if the model file is missing or fails to load;
+  procedural, no external assets): ventricles, crinkled atrial
   appendages, aortic root and arch with its three branches, pulmonary trunk/arteries, venae cavae and pulmonary
   veins as cut stumps. Coronary arteries run in their real grooves: LAD + diagonals in the anterior
   interventricular groove, LCX + obtuse marginals in the left AV groove, RCA + conus/RV/acute marginal/PDA/
@@ -157,8 +164,11 @@ frontend/
     components/
       heartAnatomy.ts      # procedural heart surface, epicardial fat, coronary arteries/veins, great vessels,
                            #   atria, territories, noise + generated normal maps
-      HeartScene.tsx       # R3F scene: materials, lighting, post-processing, risk coloring, selection,
-                           #   camera focus, heartbeat
+      HeartScene.tsx       # R3F scene: model toggle/fallback, lighting, post-processing, selection,
+                           #   camera focus, schematic heart
+      SpecimenHeart.tsx    # realistic heart model: territories overlay, vessels, pins, heartbeat
+      specimenAnatomy.ts   # coronary tree traced on the model, surface snapping, territories, views
+      ArteryTube.tsx       # risk-coloured, clickable vessel tube with label (shared by both hearts)
       ClinicalDashboard.tsx # risk bands, validation AUC, held-out vs angiography, notices
       FeatureInput.tsx     # clinical form: quick/full mode, validation, example patients
       ExplanationPanel.tsx  # plain-language per-model explanations
@@ -177,6 +187,12 @@ frontend/
 - **Clinical Interpretability (20%)** — SHAP feature attributions, physiological breakdown
 - **System Integration (15%)** — data pipeline, model↔dashboard, real-time updates
 - **Technical Implementation (10%)** — architecture, reproducibility, public datasets/meshes
+
+## Credits
+- 3D heart model: ["Realistic Human Heart"](https://sketchfab.com/3d-models/realistic-human-heart-3f8072336ce94d18b3d0d055a1ece089)
+  by **neshallads**, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+  (`frontend/public/models/heart.glb`, used unmodified; attribution also shown in the app).
+- Dataset: Z-Alizadeh Sani et al., UCI Machine Learning Repository (see below).
 
 ## Dataset
 - **Primary**: UCI ML Repository — *Extension of Z-Alizadeh Sani Dataset* (also on Kaggle)

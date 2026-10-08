@@ -1,4 +1,4 @@
-> **Status: parked.** Generated 2026-10-07 by a judge-panel design workflow (3 designs, 2 judges, synthesis). Not implemented yet — the team paused 3D work to focus on the ML models and usability. Resume once the Sketchfab "Realistic Human Heart" (CC BY 4.0, neshallads) glTF is in `frontend/public/models/`.
+> **Status: implemented (simplified), 2026-10-08.** The shipped approach differs from this plan: instead of registering the schematic (u, v) frame onto the model, the coronary tree was traced directly on the model's sculpted grooves (surface picks in model coordinates), then snapped to the surface at load time with a BVH. Territories use nearest-artery proximity masked below the AV groove; camera views come from territory centroids. See `frontend/src/components/specimenAnatomy.ts` and `SpecimenHeart.tsx`. The plan below is kept for reference.
 
 # CardioVision: plan for adding the Sketchfab heart model with risk overlays
 

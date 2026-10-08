@@ -1,7 +1,7 @@
 # HANDOFF -- CardioVision (Track A)
 
 Handoff doc for the next agent (Claude) picking up this project.
-Last updated: 2026-10-07. Day 1 + Day 2 complete. See section 7b for Day 2 work.
+Last updated: 2026-10-08. Days 1-3 complete: models (7c), usability (7c), realistic 3D heart (7d). Remaining: docs, demo video, Devpost (section 8).
 
 ## 1. What this project is
 
@@ -21,20 +21,21 @@ Track C (speech analytics) was evaluated and rejected. See ../hackathon_details.
 
 | Criterion | Weight | Status |
 |---|---|---|
-| Predictive Performance | 30% | strong baseline done |
-| 3D Visualization | 25% | procedural anatomical heart, arteries in real grooves, territories, click-to-focus |
-| Clinical Interpretability | 20% | per-vessel SHAP with clinical labels, baseline->patient reconciliation |
-| System Integration | 15% | verified end to end in the browser (presets -> /explain -> 3D + SHAP) |
-| Technical Implementation | 10% | clean arch, reproducible |
+| Predictive Performance | 30% | verified blends: AUC CAD .943, LAD .856, LCX .761, RCA .739 (5x5 CV) |
+| 3D Visualization | 25% | realistic CC BY heart with fitted coronaries + territories; schematic toggle/fallback |
+| Clinical Interpretability | 20% | exact per-model attributions, plain-language panel, calibration bands |
+| System Integration | 15% | live updates, validated form, quick mode, error handling, verified in browser |
+| Technical Implementation | 10% | harness + experiments + model report, pinned deps, fresh-clone path |
 
-Day 2 closed the 3D gap. Biggest remaining wins now: model tuning for LCX/RCA (bounded), the 6-page doc, and the demo video.
+Biggest remaining wins: the 6-page technical doc (most content is in docs/model-report.md), the demo video, Devpost.
 
 ## 3. How to run it
 
 Backend:
 - cd cardiovision/backend
 - source .venv/bin/activate
-- python train.py  (already run; retrains 4 models in ~8s, writes models/)
+- python train.py  (~4-5 min: 5x5 CV + nested thresholds, 4 targets in parallel; writes models/)
+- python make_presets.py  (example patients from held-out predictions -> frontend/src/presets.json)
 - uvicorn app.main:app --reload --port 8000  (API at :8000, docs at /docs)
 - .venv/bin/python test_pipeline.py  (in-process test, no server needed)
 
@@ -44,7 +45,7 @@ Frontend:
 - npm run dev  (Vite at :5173, proxies API to :8000)
 - npm run build  (tsc + vite build, currently passes)
 
-Run both: start uvicorn on :8000, then npm run dev on :5173, open http://localhost:5173. The form has an example high-risk patient preloaded. Click "Predict Risk" to see probabilities + 3D color update + SHAP.
+Run both: start uvicorn on :8000, then npm run dev on :5173, open http://localhost:5173 (in the Claude desktop app: ../.claude/launch.json defines `api` and `web`). A labelled demo patient is preloaded and estimated automatically (live mode).
 
 ## 4. Dataset facts
 
@@ -59,18 +60,19 @@ Run both: start uvicorn on :8000, then npm run dev on :5173, open http://localho
 - Categorical encoding: 21 object columns. Y/N to 1/0; Sex Male/Fmale (typo "Fmale" is in the data); BBB N/LBBB/RBBB; VHD N/mild/Moderate/Severe. Auto-learned in train.py, saved to models/encoding.json.
 - The ucimlrepo Python API CANNOT import this dataset (download-only). The xlsx is already in backend/data/. Don't try fetch_ucirepo(id=411).
 
-## 5. Model results (5-fold CV, honest numbers)
+## 5. Model results (5x5 repeated CV, honest numbers)
 
-| Target | Acc | Precision | Recall | F1 | AUC | Notes |
-|---|---|---|---|---|---|---|
-| CAD | 0.871 | 0.900 | 0.921 | 0.911 | 0.906 | strong |
-| LAD | 0.795 | 0.811 | 0.847 | 0.829 | 0.846 | good |
-| LCX | 0.710 | 0.640 | 0.597 | 0.617 | 0.744 | moderate, tunable |
-| RCA | 0.657 | 0.551 | 0.474 | 0.509 | 0.678 | weak, hard target on 303 rows |
+| Target | ROC-AUC | Acc@0.5 | F1@0.5 | Nested tuned F1 | Old XGB AUC |
+|---|---|---|---|---|---|
+| CAD | 0.943 | 0.883 | 0.919 | 0.915 | 0.900 |
+| LAD | 0.856 | 0.799 | 0.836 | 0.839 | 0.828 |
+| LCX | 0.761 | 0.700 | 0.566 | 0.660 | 0.745 |
+| RCA | 0.739 | 0.682 | 0.530 | 0.613 | 0.678 |
 
-XGBoost: n_estimators=400, max_depth=4, lr=0.05, subsample=0.8, scale_pos_weight=neg/pos.
-CAD/LAD are judge-pleasing strong. LCX/RCA are genuinely hard. Don't overfit the validation chasing RCA. Report CV honestly.
-Example patient (preloaded) predicts CAD=1.000, LAD=0.998, LCX=0.697, RCA=0.972. SHAP top contributors: Typical Chest Pain (+1.83), TG, Region RWMA, FBS, EF-TTE, T-inversion, DM, Age.
+Models: per-target log-odds blend of logistic regression on clinical composites + shallow boosted trees
+(backend/app/cardio_models.py). Full methods, calibration, literature comparison and limitations:
+docs/model-report.md. Don't chase RCA/LCX further without the harness (backend/experiments/harness.py);
+split noise is ~0.02 AUC, so compare candidates with paired deltas on identical folds.
 
 ## 6. CRITICAL gotchas (read before touching anything)
 
@@ -142,36 +144,47 @@ Gotchas found on Day 2:
 - `useThree().size` can be 0 on the first layout pass; guard before dividing (it NaN'd the camera once).
 - `fastapi.testclient` needs httpx2, which isn't installed; test HTTP with a real uvicorn + curl instead.
 
-## 8. What's NEXT (Day 3+), in priority order
+## 7c. What's DONE (ML + usability, 7 Oct)
 
-Day 2 items below are done (3D mesh, integration, click interaction, per-vessel SHAP, presets).
+- Leakage-safe harness (backend/experiments/harness.py) and 6 experiment strategies, each adversarially
+  re-verified on unseen splits; final pick on seeds 400-800 with a pre-declared rule; independent re-check
+  on seeds 900-904 beat the old model in every repeat. Production models in app/cardio_models.py.
+- train.py: CSV rebuilt from the committed UCI zip on a fresh clone; parallel per-target training; learned
+  thresholds (F1 / rule-out / balanced); calibration bands; feature_info.json (ranges, defaults, influence).
+- API: /metrics, richer /features, /health; responses carry threshold, band + observed rate, imputed fields,
+  range warnings, model version, disclaimer. Schema: only Age/Sex required; unrecorded findings default to
+  absent (NOT the cohort mode: typical angina/HTN are majority-positive in this referral cohort).
+- UI: field spec, quick (19) / full (55) mode, inline validation, live updates with stale detection,
+  structured API errors + status pill, honest dashboard (bands, AUC, held-out vs angiography for presets),
+  plain-language explanations, error boundaries, responsive layout.
+- Finding for the write-up: the vessel models are not very vessel-specific (no isolated-RCA patient is singled
+  out by held-out predictions; LAD is over-called), shown honestly in the RCA preset.
 
-### Day 2 -- 3D mesh + integration (highest leverage)
-1. Source a real heart .glb/.gltf (CC0 / open license): NIH 3D Print Exchange, BodyParts3D, Sketchfab (filter CC0), Open Anatomy Project. Place in frontend/public/heart.glb, load with useGLTF in HeartScene.tsx.
-2. Map LAD/LCX/RCA to the mesh: either named nodes in the glb, or overlay artery tubes (current ArteryTube approach) positioned along the real heart surface. Color each by predicted probability (green to yellow to red; probToColor already exists).
-3. Run backend + frontend together in a browser and verify the full loop: form to POST /predict to arteries recolor to SHAP panel renders. (Use required_permissions: ["all"] for the shell, or run uvicorn + vite in one command.)
-4. Click-an-artery interaction to highlight + show vessel-specific risk + its SHAP drivers.
+## 7d. What's DONE (realistic 3D heart, 8 Oct)
 
-### Day 3 -- API wiring polish + SHAP per-vessel
-- Currently /explain returns SHAP for the CAD model only. Extend to return SHAP for the selected vessel model (LAD/LCX/RCA) so the explanation panel reflects which artery the user clicked. (Frontend already passes selected; backend needs a per-vessel field.)
-- Add a few preset patient buttons (low-risk / high-risk / borderline) for the demo.
+- frontend/public/models/heart.glb: "Realistic Human Heart" by neshallads, CC BY 4.0 (credited in the UI, README
+  and public/models/README.txt). Single mesh, ~12k verts, Y-up anatomical anterior pose, ~0.5 scale after its
+  node transforms; texture metalness channel is 0 (metalness forced to 0 anyway).
+- Coronary tree traced on the model's sculpted grooves (surface picks, model coordinates) in
+  specimenAnatomy.ts; at load: BVH closest-point snapping + normal lift + smoothing. Territories by nearest
+  artery tree (soft-min), masked below an AV-groove height ring. Camera views from territory centroids.
+- SpecimenHeart.tsx renders it (accelerated raycast, translucent RGBA overlay for territories, clickable wall,
+  pins lifted off the surface, heartbeat). HeartScene: Realistic/Schematic toggle; HEAD probe rejects the dev
+  server's HTML fallback; ErrorBoundary inside the Canvas falls back to the schematic heart.
+- Gotchas: pins/labels exactly on the surface get hidden by Html occlusion (lift them); vite.config dedupes
+  three (three-mesh-bvh otherwise pulled a second copy); the model's low roughness glitters under bloom
+  (roughness scaled x1.45).
 
-### Day 4 -- Model tuning (optional, bounded)
-- LCX/RCA are weak. Try: probability calibration (Platt/isotonic), threshold tuning for F1, light hyperparameter search. Timebox to half a day. Report whatever you get honestly.
-- Consider a small ensemble (XGB + RandomForest) only if it clearly helps CV AUC.
+## 8. What's NEXT, in priority order
 
-### Day 5 -- Dashboard + disclaimer polish
-- Persistent, visible safety disclaimer (rubric requirement -- currently a banner, make sure it's unmistakable).
-- Patient profile panel: show entered measurements alongside their SHAP contribution.
-- Loading/error states, responsive layout.
-
-### Day 6 -- Docs + demo video
-- 6-page technical doc: dataset preprocessing, model architecture, 3D pipeline, usage, eval results (use models/metrics.json).
-- 3-10 min YouTube demo (English audio/subtitles): feature input to 3D interactions to explanation to technical walkthrough.
-- Finalize README, push, create Devpost submission page, add all teammates.
-
-### Buffer -- 14 Oct
-- Final Devpost submission before EOD. All 4 components: project description, public GitHub repo (w/ README), YouTube video, team info.
+1. 6-page technical doc: dataset preprocessing, model architecture, 3D pipeline, usage, evaluation.
+   docs/model-report.md already covers most of the ML content.
+2. Demo video (3-10 min, English): quick vs full input -> live estimate -> dataset patients (held-out vs
+   angiography, incl. the honest RCA false alarm) -> 3D (click wall/artery, territories, pins) -> explanations
+   -> technical walkthrough (harness, verification, literature comparison).
+3. Devpost page + team info; final push before 14 Oct EOD.
+4. Optional: the multi-lens code review of the 7 Oct ML/UI changes was interrupted before reporting
+   (workflow run wf_a4f512a2-65c); printable report export (UX plan item 24).
 
 ## 9. Key files to read first
 
@@ -180,9 +193,15 @@ Day 2 items below are done (3D mesh, integration, click interaction, per-vessel 
 3. backend/app/config.py -- constants
 4. backend/train.py -- how models are made
 5. backend/app/shap_explainer.py -- the native-SHAP workaround (gotcha #1)
-6. frontend/src/components/HeartScene.tsx -- where the 3D work happens next
-7. backend/models/metrics.json -- current model performance
+6. backend/app/cardio_models.py -- production models + exact attributions
+7. docs/model-report.md -- results, calibration, limitations
+8. frontend/src/components/specimenAnatomy.ts + SpecimenHeart.tsx -- realistic heart integration
+9. backend/models/metrics.json -- current model performance
 
 ## 10. TL;DR for Claude
 
-Track A is locked. Backend ML + API + per-vessel SHAP done (CAD AUC .906). Frontend has a procedural anatomical 3D heart with risk-colored coronaries, perfusion territories and click-to-inspect, verified end to end in the browser. Next: bounded LCX/RCA tuning, the 6-page technical doc, demo video, Devpost. Watch the gotchas in section 6 -- especially the shap/xgboost incompat (use native pred_contribs) and the sandbox network isolation (use required_permissions: ["all"] for installs/push). Don't switch tracks.
+Track A is locked. Models are verified log-odds blends (AUC .943/.856/.761/.739) with exact attributions and
+honest calibration; the UI is a validated, live-updating clinical form with plain-language explanations; the
+3D view is a CC BY realistic heart with our coronary tree fitted into its grooves (schematic heart as toggle and
+fallback). Commit + push to main after every verified change. Remaining: technical doc, demo video, Devpost.
+Gotchas in sections 6, 7b and 7d. Don't switch tracks.
