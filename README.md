@@ -2,9 +2,16 @@
 
 Interactive 3D cardiovascular risk prediction system for the **Multimodal AI Hackathon 2026** (Track A).
 
-Predicts overall **Coronary Artery Disease (CAD)** status and vessel-specific **stenosis** for the **LAD**, **LCX**, and **RCA** coronary arteries from clinical/ECG/echo features, then maps the predicted risk onto an interactive 3D heart model with SHAP-based clinical interpretability.
+Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosis** (≥50% narrowing) of the **LAD**, **LCX** and **RCA** coronary arteries from 55 clinical, ECG, laboratory and echo features, then maps the risk onto an interactive 3D heart with exact per-feature explanations.
 
-> ⚠️ **Clinical Safety Disclaimer:** This system is for **decision support and educational purposes only**. It is **not** a substitute for formal diagnostic imaging or professional medical advice.
+| Validated performance (5×5 repeated CV, n=303) | CAD | LAD | LCX | RCA |
+|---|---|---|---|---|
+| ROC-AUC | **0.943** | **0.856** | **0.761** | **0.739** |
+| Accuracy (at 0.5) | 0.883 | 0.799 | 0.700 | 0.682 |
+
+See [docs/model-report.md](docs/model-report.md) for methods, operating points, calibration, the literature comparison and limitations.
+
+> ⚠️ **Clinical Safety Disclaimer:** This system is for **decision support and educational purposes only**. It was trained on 303 patients referred for angiography at a single centre and is **not** validated for screening. It is **not** a diagnosis and does not replace angiography, formal diagnostic imaging or professional medical judgement.
 
 ---
 
@@ -26,20 +33,35 @@ Predicts overall **Coronary Artery Disease (CAD)** status and vessel-specific **
                            ▼
 ┌──────────────────────────────────────────────────────────┐
 │  Backend  (FastAPI)                                       │
-│  /predict  →  CAD classifier + LAD/LCX/RCA classifiers     │
-│  /explain  →  predictions + SHAP values for all 4 models   │
+│  /predict  →  4 models: probability, threshold, risk band │
+│  /explain  →  + exact per-feature attributions (log-odds)  │
+│  /metrics, /features, /health  →  validation + metadata    │
 └──────────────────────────┬─────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────┐
-│  Models  (scikit-learn / XGBoost tree ensembles)         │
-│  Trained on Z-Alizadeh Sani extension (UCI / Kaggle)      │
-│  Leakage-safe: LAD, LCX, RCA, Cath excluded from inputs   │
+│  Models  (app/cardio_models.py)                           │
+│  Log-odds blend per target: logistic regression on        │
+│  clinical composites + shallow boosted trees (LightGBM /  │
+│  XGBoost); leakage-safe (LAD/LCX/RCA/Cath never inputs)   │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ## Features
 
-- **Vessel-level prediction**: four XGBoost classifiers (overall CAD, LAD, LCX, RCA stenosis), 5-fold CV.
+- **Validated models**: per target, an equal-weight log-odds blend of a regularised logistic regression on
+  clinical composites (Diamond-Forrester pre-test probability, risk-factor and ECG-abnormality counts, lipid
+  ratios, eGFR, ...) and a shallow gradient-boosted tree model. Chosen from six strategies by a leakage-safe
+  5×5 repeated-CV protocol with adversarial re-verification on unseen splits (`backend/experiments/`).
+  Decision thresholds and calibration are learned inside training folds only.
+- **Usable clinical form**: quick mode (19 key inputs) or full mode (55); units, ranges and typical values
+  inline; chest pain and smoking as single choices; BMI calculated; validation as you type; any field can be
+  left empty (unrecorded findings count as absent, measurements take the cohort median) and the result lists
+  what was filled in; out-of-range values are flagged.
+- **Live results**: estimates update as you type, stale results are clearly marked, and API errors are shown
+  in place (field-level validation, offline / untrained-model messages, status indicator).
+- **Honest results display**: whole-percent probabilities, risk bands with the event rate actually observed in
+  validation, each model's cross-validated AUC, weaker vessel models marked, disagreement between the CAD and
+  vessel models flagged, safety disclaimer always visible and included in every API response.
 - **Anatomical 3D heart** (procedural, no external mesh or image assets): ventricles, crinkled atrial
   appendages, aortic root and arch with its three branches, pulmonary trunk/arteries, venae cavae and pulmonary
   veins as cut stumps. Coronary arteries run in their real grooves: LAD + diagonals in the anterior
@@ -58,19 +80,21 @@ Predicts overall **Coronary Artery Disease (CAD)** status and vessel-specific **
 - **Click to inspect**: clicking an artery, its label, or a region of heart wall (which selects the artery
   perfusing it) swings the camera to that territory, highlights the supplied myocardium and switches the SHAP
   panel to that vessel's model.
-- **Per-vessel SHAP**: diverging bar chart of top drivers with clinical labels and units, plus a
-  baseline → patient probability reconciliation.
-- **Example patients**: four real dataset patients (normal, isolated LAD, isolated RCA, three-vessel disease),
-  chosen by out-of-fold predictions, shown next to their angiography ground truth.
+- **Plain-language explanations per model**: a summary sentence, the top drivers with strength and odds
+  multipliers, derived clinical scores labelled with their inputs, and a waterfall in percentage points. The
+  attributions are exact (linear terms + native TreeSHAP, base + Σ = model log-odds, checked per request).
+- **Example patients**: five real dataset patients (normal, LAD, RCA, three-vessel, and an honest uncertain
+  case), shown with their angiography result and the *held-out* estimate (from models that never saw them),
+  including false alarms.
+- **Anatomy pins**: numbered annotations with short clinical notes.
 - Heartbeat animation at the patient's pulse rate.
 
 ## Quickstart
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.10–3.13
 - Node 18+
-- The Z-Alizadeh Sani extension dataset as `backend/data/ZAlizadehSani.csv`
-  (UCI id 411; download manually, `ucimlrepo` cannot import this dataset)
+- The dataset ships with the repo (`backend/data/extention.zip`, the UCI download); `train.py` extracts it.
 
 ### Backend
 ```bash
@@ -78,7 +102,7 @@ cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Train models (one-time, ~10 s, writes to backend/models/; weights are not committed)
+# Train models (one-time, ~4-5 min on a 4+ core laptop; weights are not committed)
 python train.py
 
 # Optional: regenerate the frontend's example patients (frontend/src/presets.json)
@@ -99,6 +123,13 @@ npm install
 npm run dev
 ```
 App at http://localhost:5173 (Vite proxies API calls to :8000, so start the backend first).
+To point a production build at another API host, set `VITE_API_URL` at build time (CORS is enabled).
+
+### Troubleshooting
+- **"API offline"** in the header: start the backend (`uvicorn app.main:app --port 8000`), then click *retry*.
+- **"Models not trained"**: run `python train.py` in `backend/`.
+- **Slow or blank 3D view**: switch *HD* off in the 3D toolbar; without WebGL the app shows a 2D fallback and
+  everything else keeps working.
 
 ---
 
@@ -106,18 +137,20 @@ App at http://localhost:5173 (Vite proxies API calls to :8000, so start the back
 ```
 backend/
   app/
-    main.py            # FastAPI app, /predict and /explain endpoints
-    model.py           # model loading + inference
-    shap_explainer.py  # SHAP via XGBoost native pred_contribs
-    schemas.py         # pydantic request/response models
+    main.py            # FastAPI app: /predict, /explain, /metrics, /features, /health
+    cardio_models.py   # production models, clinical feature engineering, exact attributions
+    model.py           # model loading + inference (thresholds, risk bands)
+    shap_explainer.py  # per-feature attributions for the API (additivity checked)
+    schemas.py         # pydantic request/response models, validation, imputation contract
     encoders.py        # categorical encoding
     config.py          # shared paths/constants
-  train.py             # training pipeline (CAD + 3 vessels)
-  make_presets.py      # picks real example patients by out-of-fold prediction
+  train.py             # training: 5x5 CV metrics, thresholds, calibration bands, feature info
+  make_presets.py      # picks real example patients from held-out predictions
   test_pipeline.py     # in-process end-to-end test
-  requirements.txt
-  data/                # dataset (gitignored)
-  models/              # trained weights (gitignored)
+  experiments/         # leakage-safe harness + the model-selection experiments
+  requirements.txt     # runtime; requirements-dev.txt adds experiment-only packages
+  data/                # UCI zip (committed); extracted CSV (gitignored)
+  models/              # metrics.json, feature_info.json (committed); trained weights (gitignored)
 frontend/
   src/
     App.tsx
@@ -126,10 +159,13 @@ frontend/
                            #   atria, territories, noise + generated normal maps
       HeartScene.tsx       # R3F scene: materials, lighting, post-processing, risk coloring, selection,
                            #   camera focus, heartbeat
-      ClinicalDashboard.tsx # overall CAD + vessel probabilities (+ ground truth for presets)
-      FeatureInput.tsx     # clinical feature form + example patients
-      ExplanationPanel.tsx  # per-vessel SHAP breakdown
-    featureLabels.ts       # clinical labels/units for features
+      ClinicalDashboard.tsx # risk bands, validation AUC, held-out vs angiography, notices
+      FeatureInput.tsx     # clinical form: quick/full mode, validation, example patients
+      ExplanationPanel.tsx  # plain-language per-model explanations
+      ErrorBoundary.tsx    # keeps the app usable if a panel (e.g. WebGL) fails
+    fieldSpec.ts           # single source for form fields, units, ranges, payload/validation
+    featureLabels.ts       # clinical labels for model features and derived scores
+    risk.ts                # probability / band / reliability formatting
     presets.json           # generated by backend/make_presets.py
     api/client.ts
   package.json
@@ -148,13 +184,16 @@ frontend/
 - Targets: overall CAD + LAD/LCX/RCA stenosis status
 - **Leakage guard**: `LAD`, `LCX`, `RCA`, `Cath` columns are excluded from model input features.
 
-## Model performance (5-fold stratified CV, 303 patients)
+## Model performance (5×5 repeated stratified CV, 303 patients)
 
-| Target | Accuracy | Precision | Recall | F1 | ROC-AUC |
-|---|---|---|---|---|---|
-| CAD | 0.871 | 0.900 | 0.921 | 0.911 | 0.906 |
-| LAD | 0.795 | 0.811 | 0.847 | 0.829 | 0.846 |
-| LCX | 0.710 | 0.640 | 0.597 | 0.617 | 0.744 |
-| RCA | 0.657 | 0.551 | 0.474 | 0.509 | 0.678 |
+| Target | ROC-AUC | PR-AUC | Brier | Accuracy | Precision | Recall | F1 |
+|---|---|---|---|---|---|---|---|
+| CAD | 0.943 ± 0.005 | 0.976 | 0.083 | 0.883 | 0.910 | 0.928 | 0.919 |
+| LAD | 0.856 ± 0.011 | 0.883 | 0.148 | 0.799 | 0.797 | 0.880 | 0.836 |
+| LCX | 0.761 ± 0.013 | 0.625 | 0.196 | 0.700 | 0.656 | 0.497 | 0.566 |
+| RCA | 0.739 ± 0.006 | 0.594 | 0.199 | 0.682 | 0.596 | 0.479 | 0.530 |
 
-Source: `backend/models/metrics.json` (regenerated by `train.py`).
+Decisions at 0.5 shown. The app uses the F1-optimal threshold learned in training (nested estimates: LCX
+F1 0.66, RCA F1 0.61, CAD rule-out sensitivity 0.97 with NPV 0.89); see the model report. The previous XGBoost
+model scored AUC 0.90 / 0.83 / 0.75 / 0.68 under the same protocol. Source: `backend/models/metrics.json`
+(regenerated by `train.py`).
