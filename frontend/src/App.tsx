@@ -9,7 +9,7 @@ import {
   type ExplainResponse, type FeaturesResponse, type MetricsResponse,
 } from "./api/client";
 import { DEMO_PATIENT, toPayload, validate, type FormValues } from "./fieldSpec";
-import { formatPct } from "./risk";
+import { configureBands, formatPct } from "./risk";
 
 type ApiStatus = "checking" | "online" | "models_missing" | "offline";
 
@@ -47,6 +47,7 @@ export default function App() {
       await getHealth();
       setStatus("online");
       const [m, f] = await Promise.all([getMetrics(), getFeatures()]);
+      configureBands(m);
       setMetrics(m);
       setInfo(f);
     } catch (e) {
@@ -163,7 +164,9 @@ export default function App() {
         <section aria-label="3D heart" className="order-2 h-[55vh] min-h-0 rounded bg-slate-800 lg:h-auto">
           <ErrorBoundary fallback={<HeartFallback result={result} />}>
             <HeartScene
-              probs={result && !stale ? result.vessel_probabilities : null}
+              // Keep the last estimate while inputs change (colours glide to the new one; no grey flash).
+              probs={result ? result.vessel_probabilities : null}
+              pending={stale}
               selected={selected}
               onSelect={setSelected}
               bpm={bpm}

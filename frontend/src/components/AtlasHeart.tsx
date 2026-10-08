@@ -6,7 +6,7 @@ import {
 } from "react";
 import * as THREE from "three";
 import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
-import { VesselLabel, type ArteryProbs } from "./ArteryTube";
+import { VesselLabel, useVesselMaterial, type ArteryProbs } from "./ArteryTube";
 import {
   ATLAS_HEART_URL, ATLAS_SCALE, ATLAS_THORAX_URL, prepareAtlasHeart, prepareThorax,
   type AtlasBranch, type AtlasPart, type PreparedAtlasHeart,
@@ -340,40 +340,7 @@ interface CoronaryProps {
 /** One coronary tree (all its named branches in one mesh), coloured by its vessel's model. */
 function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }: CoronaryProps) {
   const vessel = part.vessel === "lm" || !part.vessel ? null : part.vessel;
-  const p = probs && vessel ? probs[vessel] : null;
-  const material = useMemo(() => new THREE.MeshPhysicalMaterial({
-    color: NEUTRAL_ARTERY.clone(),
-    emissive: NEUTRAL_ARTERY.clone(),
-    roughness: 0.3,
-    clearcoat: 1,
-    clearcoatRoughness: 0.15,
-    side: THREE.DoubleSide,
-  }), []);
-  const target = useMemo(() => (p === null ? NEUTRAL_ARTERY.clone() : riskColor(p)), [p]);
-  const isSelected = vessel !== null && vessel === selected;
-  const dimmed = selected !== null && !isSelected;
-
-  useFrame(({ clock }, dt) => {
-    // Colours glide to a new estimate instead of jumping.
-    const k = 1 - Math.exp(-8 * dt);
-    material.color.lerp(target, k);
-    material.emissive.copy(material.color);
-    material.emissiveIntensity = dimmed
-      ? 0.04
-      : isSelected
-        ? 2.2 + 1.6 * Math.sin(clock.elapsedTime * 4)
-        : vessel && vessel === hovered
-          ? 1.0
-          : p !== null && p >= 0.66
-            ? 0.5
-            : vessel ? 0.22 : 0.05;
-    const opacity = dimmed ? 0.35 : 1;
-    if (material.opacity !== opacity) {
-      material.opacity = opacity;
-      material.transparent = opacity < 1;
-      material.needsUpdate = true;
-    }
-  });
+  const { material } = useVesselMaterial(vessel, probs, selected, hovered);
 
   const branchAt = (e: ThreeEvent<PointerEvent | MouseEvent>) => branchName(part, e);
   const tip = useTip((e) => {

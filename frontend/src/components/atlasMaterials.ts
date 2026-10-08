@@ -18,6 +18,8 @@ interface Patch {
   bump?: { freq: number; strength: number };
   cutaway?: boolean;
   fresnel?: { min: number; power: number };
+  /** Diagonal stripes whose strength is material.userData.uStripe.value (0..1): the "undecided" band. */
+  stripes?: boolean;
 }
 
 // Simplex noise 3D: Ian McEwan / Ashima Arts, MIT licence (webgl-noise).
@@ -57,7 +59,9 @@ vec3 cvPerturb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDir){
 export function patchMaterial<T extends THREE.Material>(material: T, patch: Patch): T {
   const key = JSON.stringify(patch);
   material.customProgramCacheKey = () => key;
+  if (patch.stripes) material.userData.uStripe = { value: 0 };
   material.onBeforeCompile = (shader) => {
+    if (patch.stripes) shader.uniforms.uStripe = material.userData.uStripe;
     shader.uniforms.uCutRadius = CUTAWAY.uCutRadius;
     shader.uniforms.uCutOn = CUTAWAY.uCutOn;
     shader.uniforms.uBumpFreq = { value: patch.bump?.freq ?? 0 };
@@ -77,8 +81,21 @@ uniform float uCutRadius;
 uniform float uCutOn;
 uniform float uBumpFreq;
 uniform float uBumpStrength;
+${patch.stripes ? "uniform float uStripe;" : ""}
 ${patch.bump ? NOISE : ""}`,
     );
+    if (patch.stripes) {
+      // World-space diagonal stripes (same width on every heart model); dim both the base and emissive colour.
+      frag = frag.replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+  {
+    float cvStripe = step(0.5, fract(dot(vCvWorld, vec3(1.0, 1.0, 0.6)) * 6.0)) * uStripe;
+    diffuseColor.rgb *= 1.0 - 0.55 * cvStripe;
+    totalEmissiveRadiance *= 1.0 - 0.7 * cvStripe;
+  }`,
+      );
+    }
     if (patch.cutaway) {
       // The heart sits at the world origin; cut a cylinder from the camera up to it.
       frag = frag.replace(

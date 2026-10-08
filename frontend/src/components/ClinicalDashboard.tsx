@@ -1,6 +1,6 @@
 import type { ExplainResponse, MetricsResponse, Target, TargetMetrics } from "../api/client";
 import { FIELD_LABEL } from "../fieldSpec";
-import { bandStyle, formatPct, reliability } from "../risk";
+import { BAND_COLOR, bandStyle, formatPct, reliability, type Band } from "../risk";
 import type { Preset } from "./FeatureInput";
 import type { Vessel } from "./HeartScene";
 
@@ -31,7 +31,7 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
       <div>
         <div className="text-sm text-gray-300">Probability of coronary artery disease</div>
         <div className="flex items-baseline gap-3">
-          <div className={`text-4xl font-bold ${cadStyle.text}`}>{formatPct(cad.probability)}</div>
+          <div className="text-4xl font-bold" style={{ color: BAND_COLOR[cad.band as Band] }}>{formatPct(cad.probability)}</div>
           <div className={`text-sm font-semibold ${cadStyle.text}`}>{cadStyle.label}</div>
         </div>
         {cad.band_observed_rate != null && (
@@ -63,7 +63,8 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
                   rel?.weak ? "border-dashed border-slate-500" : "border-transparent"}`}
               >
                 <div className="text-xs uppercase text-gray-300">{v}</div>
-                <div className={`text-xl font-bold ${style.text}`}>{formatPct(r.probability)}</div>
+                {/* Same band colour as this artery in the 3D view. */}
+                <div className="text-xl font-bold" style={{ color: BAND_COLOR[r.band as Band] }}>{formatPct(r.probability)}</div>
                 <div className={`text-[10px] ${style.text}`}>{r.band}</div>
                 {rel && <div className="mt-0.5 text-[10px] text-gray-500">AUC {m![v].cv.roc_auc.mean.toFixed(2)}</div>}
                 {preset && <GroundTruth target={v} preset={preset} threshold={r.threshold} compact />}

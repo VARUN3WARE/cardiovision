@@ -9,6 +9,7 @@ import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import AtlasHeart, { type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import SpecimenHeart from "./SpecimenHeart";
+import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
 import { ATLAS_CREDIT, atlasAvailable } from "./atlasAnatomy";
 import { SPECIMEN_CREDIT, specimenAvailable } from "./specimenAnatomy";
 import {
@@ -88,12 +89,14 @@ type ViewMode = "arteries" | "territories";
 
 interface HeartSceneProps {
   probs: ArteryProbs | null;
+  /** Inputs changed since these estimates were computed. */
+  pending?: boolean;
   selected: Vessel | null;
   onSelect: (vessel: Vessel | null) => void;
   bpm: number;
 }
 
-export default function HeartScene({ probs, selected, onSelect, bpm }: HeartSceneProps) {
+export default function HeartScene({ probs, pending = false, selected, onSelect, bpm }: HeartSceneProps) {
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [fx, setFx] = useState(true);
@@ -357,6 +360,12 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
         </button>
       </div>
 
+      {pending && probs && (
+        <div role="status" className="absolute left-1/2 top-12 -translate-x-1/2 rounded bg-amber-950/90 px-2 py-1 text-[10px] text-amber-200">
+          Inputs changed: colours show the previous estimate
+        </div>
+      )}
+
       {/* Anatomical view buttons */}
       <div className="absolute bottom-12 right-3 grid grid-cols-3 gap-0.5 text-[10px]" role="group" aria-label="Standard views">
         {ANATOMICAL_VIEWS.map((v) => (
@@ -382,7 +391,7 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
               <div className="mt-1 text-gray-400">Supplies: {VESSEL_INFO[selected].territory}</div>
               {probs && (
                 <div className="mt-1 text-gray-200">
-                  Predicted stenosis probability: <b>{(probs[selected] * 100).toFixed(1)}%</b>
+                  Chance of ≥50% narrowing: <b>{formatPct(probs[selected])}</b> ({vesselBand(probs[selected]).toLowerCase()} band)
                 </div>
               )}
             </>
@@ -440,15 +449,10 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
           </div>
         )}
         <div className="mb-2 text-gray-500">Drag to rotate · scroll to zoom · click an artery or heart wall</div>
-        <div className="mb-1">
-          {probs ? "Predicted stenosis probability" : "Run a prediction to color the arteries"}
+        <div className="mb-1 text-gray-300">
+          {probs ? "Chance of ≥50% narrowing in each artery (not % blocked)" : "Run a prediction to colour the arteries"}
         </div>
-        <div className="h-2 rounded bg-gradient-to-r from-green-500 via-amber-500 to-red-500" />
-        <div className="mt-0.5 flex justify-between">
-          <span>0%</span>
-          <span>50%</span>
-          <span>100%</span>
-        </div>
+        <BandLegend />
       </div>
     </div>
   );
@@ -503,6 +507,35 @@ function FitCamera() {
     camera.position.setLength(6.8 * Math.min(1.4, Math.max(1, 0.8 / aspect)));
   }, [camera, size.width, size.height]);
   return null;
+}
+
+/** Three band swatches with their ranges; the middle (undecided) band is striped, as in 3D. */
+function BandLegend() {
+  const [lo, hi] = getVesselCuts();
+  const bands: { band: Band; label: string; range: string }[] = [
+    { band: "Lower", label: "lower", range: `<${Math.round(lo * 100)}%` },
+    { band: "Intermediate", label: "undecided", range: `${Math.round(lo * 100)}–${Math.round(hi * 100)}%` },
+    { band: "Higher", label: "higher", range: `≥${Math.round(hi * 100)}%` },
+  ];
+  return (
+    <div className="flex gap-1">
+      {bands.map(({ band, label, range }) => (
+        <div key={band} className="flex-1">
+          <div
+            className="h-2 rounded"
+            style={{
+              background: band === "Intermediate"
+                ? `repeating-linear-gradient(135deg, ${BAND_COLOR[band]} 0 4px, #7a4f0a 4px 7px)`
+                : BAND_COLOR[band],
+            }}
+          />
+          <div className="mt-0.5 leading-tight">
+            <span className="text-gray-300">{label}</span> {range}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function reducedMotion() {

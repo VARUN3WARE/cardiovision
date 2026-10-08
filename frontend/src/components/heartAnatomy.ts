@@ -24,6 +24,7 @@
  *  - crinkled atrial appendages, aortic root sinuses and arch branches, cut vessel ends.
  */
 import * as THREE from "three";
+import { BAND_COLOR, getVesselCuts } from "../risk";
 
 export type Vessel = "lad" | "lcx" | "rca";
 
@@ -570,9 +571,12 @@ export function makeTissueNormalMap(size = 256) {
 // Colours.
 // ---------------------------------------------------------------------------
 
-const GREEN = new THREE.Color("#22c55e");
-const AMBER = new THREE.Color("#f59e0b"); // amber, not yellow, so mid-risk vessels don't vanish into fat
-const RED = new THREE.Color("#ef2b2b");
+// Band colours (shared with the cards and legend via risk.ts). Amber, not yellow, so undecided
+// vessels don't vanish into epicardial fat.
+const GREEN = new THREE.Color(BAND_COLOR.Lower);
+const AMBER = new THREE.Color(BAND_COLOR.Intermediate);
+const RED = new THREE.Color(BAND_COLOR.Higher);
+const BAND_EDGE = 0.015; // soft transition either side of a cut-off, so colours never flicker at the edge
 export const NEUTRAL_ARTERY = new THREE.Color("#e3a196");
 export const VEIN_COLOR = new THREE.Color("#4a2433"); // dark maroon cardiac veins
 export const MUSCLE_DARK = new THREE.Color("#5a1e1b");
@@ -580,7 +584,16 @@ export const MUSCLE_LIGHT = new THREE.Color("#8c3a32");
 export const FAT_DARK = new THREE.Color("#c99a55");
 export const FAT_LIGHT = new THREE.Color("#efd7a2");
 
-/** Probability [0,1] -> green / amber / red. */
+/** Probability [0,1] -> its likelihood band's colour (green / amber / red), as on the vessel cards. */
 export function riskColor(p: number, out = new THREE.Color()) {
-  return p < 0.5 ? out.copy(GREEN).lerp(AMBER, p * 2) : out.copy(AMBER).lerp(RED, (p - 0.5) * 2);
+  const [lo, hi] = getVesselCuts();
+  const edge = (c: number) => Math.min(1, Math.max(0, (p - c + BAND_EDGE) / (2 * BAND_EDGE)));
+  return out.copy(GREEN).lerp(AMBER, edge(lo)).lerp(RED, edge(hi));
+}
+
+/** 0..1: how far p sits inside the middle ("undecided") band, for striping. */
+export function undecided(p: number) {
+  const [lo, hi] = getVesselCuts();
+  const inside = (x: number) => Math.min(1, Math.max(0, x / (2 * BAND_EDGE) + 0.5));
+  return Math.min(inside(p - lo), inside(hi - p));
 }
