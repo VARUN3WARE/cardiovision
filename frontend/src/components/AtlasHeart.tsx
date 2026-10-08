@@ -11,6 +11,17 @@ import {
 import { patchMaterial } from "./atlasMaterials";
 import { NEUTRAL_ARTERY, fbm, riskColor, type Vessel } from "./heartAnatomy";
 
+/** Which chest layers to draw around the heart. */
+export interface ChestLayers {
+  skin: boolean;
+  skeleton: boolean;
+  organs: boolean; // diaphragm and airway
+}
+
+const LAYER_GROUP: Record<string, keyof ChestLayers> = {
+  skin: "skin", bone: "skeleton", cartilage: "skeleton", diaphragm: "organs", airway: "organs",
+};
+
 export interface AtlasPick {
   vessel: Vessel | "lm";
   part: string; // e.g. "Right coronary artery (RCA)"
@@ -24,7 +35,7 @@ interface Props {
   hovered: Vessel | null;
   mode: "arteries" | "territories";
   xray: boolean;
-  chest: boolean;
+  chest: ChestLayers | null;
   bpm: number;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
@@ -110,7 +121,7 @@ export default function AtlasHeart(props: Props) {
       </group>
       {chest && (
         <Suspense fallback={null}>
-          <Thorax center={atlas.center} />
+          <Thorax center={atlas.center} layers={chest} />
         </Suspense>
       )}
     </group>
@@ -164,7 +175,7 @@ function Wall({ part, atlas, meshRef, probs, selected, mode, xray, onSelect, onP
       if (probs && mode === "territories") {
         tint.setRGB(0, 0, 0);
         TARGETS.forEach((t, k) => tint.add(riskColor(probs[t], tmp).multiplyScalar(T[i * 3 + k])));
-        c.lerp(tint, 0.6 - 0.2 * fat);
+        c.lerp(tint, 0.74 - 0.2 * fat);
       } else if (selected) {
         tint.copy(probs ? riskColor(probs[selected], tmp) : NEUTRAL_ARTERY);
         c.lerp(tint, 0.5 * Math.max(0, (T[i * 3 + TARGETS.indexOf(selected)] - 0.35) / 0.65));
@@ -352,7 +363,7 @@ function useXray(material: THREE.Material, on: boolean, opacity: number) {
 }
 
 /** Chest context: ghosted skin, skeleton, costal cartilage, diaphragm and airway, with a cutaway onto the heart. */
-function Thorax({ center }: { center: THREE.Vector3 }) {
+function Thorax({ center, layers }: { center: THREE.Vector3; layers: ChestLayers }) {
   const gltf = useGLTF(ATLAS_THORAX_URL, false, true);
   const parts = useMemo(() => prepareThorax(gltf.scene, center), [gltf.scene, center]);
   // Lambert shading for the chest: it covers much of the screen, so it must stay cheap on integrated GPUs.
@@ -369,7 +380,7 @@ function Thorax({ center }: { center: THREE.Vector3 }) {
   }), []);
   return (
     <group>
-      {parts.map((p) => {
+      {parts.filter((p) => layers[LAYER_GROUP[p.layer] ?? "skeleton"]).map((p) => {
         const m = materials[p.layer as keyof typeof materials] ?? materials.bone;
         // Skin draws last (it is the outermost translucent layer); nothing in the chest takes clicks.
         return <mesh key={p.key} geometry={p.geometry} material={m} renderOrder={p.layer === "skin" ? 3 : p.layer === "diaphragm" ? 2 : 0} raycast={() => null} />;

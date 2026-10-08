@@ -6,7 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
-import AtlasHeart, { type AtlasPick } from "./AtlasHeart";
+import AtlasHeart, { type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import SpecimenHeart from "./SpecimenHeart";
 import { ATLAS_CREDIT, atlasAvailable } from "./atlasAnatomy";
@@ -110,6 +110,8 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
   const [atlasFailed, setAtlasFailed] = useState(false);
   const [atlasViews, setAtlasViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
   const [chest, setChest] = useState(true);
+  const [layers, setLayers] = useState<ChestLayers>({ skin: true, skeleton: true, organs: true });
+  const [layerMenu, setLayerMenu] = useState(false);
   const [xray, setXray] = useState(false);
   const [pick, setPick] = useState<AtlasPick | null>(null);
   const [view, setView] = useState<{ dir: THREE.Vector3; n: number } | null>(null);
@@ -169,7 +171,7 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
                   hovered={hovered}
                   mode={mode}
                   xray={xray}
-                  chest={chest}
+                  chest={chest ? layers : null}
                   bpm={beating ? bpm : 0}
                   onSelect={onSelect}
                   onHover={setHovered}
@@ -280,6 +282,37 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
             >
               Chest
             </button>
+            <div className="relative -ml-1">
+              <button
+                onClick={() => setLayerMenu((m) => !m)}
+                aria-expanded={layerMenu}
+                aria-label="Chest layers"
+                title="Choose which chest layers to show"
+                className="rounded bg-slate-900/80 px-1.5 py-1 text-gray-300 hover:bg-slate-700"
+              >
+                ▾
+              </button>
+              {layerMenu && (
+                <div
+                  className="absolute left-0 top-7 z-20 w-40 rounded bg-slate-900/95 p-2 shadow-lg"
+                  onMouseLeave={() => setLayerMenu(false)}
+                >
+                  {([["skin", "Skin"], ["skeleton", "Skeleton"], ["organs", "Diaphragm & airway"]] as const).map(([k, label]) => (
+                    <label key={k} className="flex cursor-pointer items-center gap-2 py-0.5 text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={layers[k]}
+                        onChange={() => {
+                          setLayers((l) => ({ ...l, [k]: !l[k] }));
+                          setChest(true);
+                        }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setXray((x) => !x)}
               aria-pressed={xray}
@@ -400,6 +433,12 @@ export default function HeartScene({ probs, selected, onSelect, bpm }: HeartScen
 
       {/* Legend */}
       <div className="absolute bottom-3 left-3 w-56 text-[10px] text-gray-400">
+        {mode === "territories" && (
+          <div className="mb-2 rounded bg-slate-900/80 p-1.5 text-gray-300">
+            Muscle shaded by the artery that usually supplies it (standard anatomy, right dominance assumed).
+            Illustrative: not a perfusion or wall-motion map.
+          </div>
+        )}
         <div className="mb-2 text-gray-500">Drag to rotate · scroll to zoom · click an artery or heart wall</div>
         <div className="mb-1">
           {probs ? "Predicted stenosis probability" : "Run a prediction to color the arteries"}
