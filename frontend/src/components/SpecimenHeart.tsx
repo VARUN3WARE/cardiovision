@@ -1,4 +1,4 @@
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import type { ThreeEvent } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -8,6 +8,8 @@ import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import { NEUTRAL_ARTERY, riskColor, type Vessel } from "./heartAnatomy";
 import { SPECIMEN_SCALE, SPECIMEN_URL, TERRITORY_STRIDE as S, prepareSpecimen } from "./specimenAnatomy";
 import { VESSEL_IDS } from "../anatomy/registry";
+import type { BeatTiming, TwinParams } from "../twin/twin";
+import { useHeartMotion } from "../twin/useHeartMotion";
 
 const N = VESSEL_IDS.length; // index of the ventricle mask within each vertex's territory record
 
@@ -17,7 +19,8 @@ interface Props {
   hovered: Vessel | null;
   mode: "arteries" | "territories";
   pins: boolean;
-  bpm: number;
+  twin: TwinParams;
+  timing: BeatTiming;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
   /** Called once the model is prepared, with camera directions facing each vessel's territory. */
@@ -26,13 +29,12 @@ interface Props {
 
 
 /** The textured, sculpted heart model with the risk-coloured coronary tree fitted onto it. */
-export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bpm, onSelect, onHover, onReady }: Props) {
+export default function SpecimenHeart({ probs, selected, hovered, mode, pins, twin, timing, onSelect, onHover, onReady }: Props) {
   const gltf = useGLTF(SPECIMEN_URL, false, false); // the asset uses no Draco/Meshopt compression
   const prep = useMemo(() => prepareSpecimen(gltf.scene), [gltf.scene]);
   const meshRef = useRef<THREE.Mesh>(null);
   const focus = selected ?? hovered;
   const beat = useRef<THREE.Group>(null);
-  const phase = useRef(0);
 
   useLayoutEffect(() => {
     // The geometry already carries a BVH; use it for pointer and label-occlusion raycasts.
@@ -80,12 +82,13 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, bp
     setTinted(any);
   }, [overlay, prep, probs, focus, mode]);
 
-  useFrame((_, dt) => {
-    phase.current = (phase.current + (dt * bpm) / 60) % 1;
-    const t = phase.current;
-    const pulse = (c: number, w: number) => (bpm > 0 ? Math.exp(-(((t - c) / w) ** 2)) : 0);
-    const v = pulse(0.16, 0.07) + 0.25 * pulse(0.34, 0.05);
-    beat.current?.scale.set(1 - 0.022 * v, 1 - 0.012 * v, 1 - 0.022 * v);
+  // Function twin: one sculpted mesh, so the whole heart squeezes with the patient's EF (atria and
+  // ventricles cannot be separated here); LBBB adds apical rocking.
+  useHeartMotion(twin, timing, (m) => {
+    const v = m.ventricular - 0.25 * m.atrial;
+    const k = 0.7 * m.squeeze;
+    beat.current?.scale.set(1 - k * v, 1 - 0.55 * k * v, 1 - k * v);
+    if (beat.current) beat.current.rotation.z = 0.04 * m.rock;
   });
 
   // Clicking the ventricular wall selects the artery that perfuses it; other anatomy just

@@ -9,6 +9,9 @@ import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import AtlasHeart, { type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import VesselInspector from "./VesselInspector";
+import EcgMonitor from "../twin/EcgMonitor";
+import { advanceClock, beatTiming, twinFromResult, type BeatTiming, type TwinParams } from "../twin/twin";
+import { useHeartMotion } from "../twin/useHeartMotion";
 import { VESSEL_IDS } from "../anatomy/registry";
 import type { ExplainResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
@@ -94,13 +97,15 @@ export default function HeartScene({
 }: HeartSceneProps) {
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
+  const [showEcg, setShowEcg] = useState(true);
   const [fx, setFx] = useState(true);
   const [pins, setPins] = useState(false);
   const [hovered, setHovered] = useState<Vessel | null>(null);
   const [resetKey, setResetKey] = useState(0);
   const [framesReady, setFramesReady] = useState(false);
   // Realistic model when its file is present and loads; the schematic heart otherwise.
-  const [model, setModel] = useState<HeartModel>("specimen");
+  // Deep link: ?heart=atlas | realistic | schematic
+  const [model, setModel] = useState<HeartModel>(initialModel);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [specimenFailed, setSpecimenFailed] = useState(false);
   const [specimenViews, setSpecimenViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
@@ -113,7 +118,9 @@ export default function HeartScene({
   const [xray, setXray] = useState(false);
   const [pick, setPick] = useState<AtlasPick | null>(null);
   const [view, setView] = useState<{ dir: THREE.Vector3; n: number } | null>(null);
-  const [fly, setFly] = useState<{ from: number; to: number; n: number } | null>(null);
+  // Opening straight into the atlas (deep link) starts with the chest fly-in too.
+  const [fly, setFly] = useState<{ from: number; to: number; n: number } | null>(() =>
+    initialModel() === "atlas" && !reducedMotion() ? { from: CHEST_DISTANCE, to: HEART_DISTANCE, n: 1 } : null);
 
   useEffect(() => {
     specimenAvailable().then(setAvailable);
@@ -136,6 +143,9 @@ export default function HeartScene({
     if (m === "atlas" && chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
   };
   const showPick = pick && (pick.vessel === "lm" || pick.vessel === selected) ? pick : null;
+  // Function twin: the patient's recorded pulse, EF, blood pressure and ECG findings drive the heart.
+  const twin = useMemo(() => twinFromResult(result, bpm), [result, bpm]);
+  const timing = useMemo(() => beatTiming(twin), [twin]);
   const rwma = useMemo(() => {
     const exp = result?.explanations.cad;
     const i = exp ? exp.feature_names.indexOf("Region RWMA") : -1;
@@ -150,7 +160,8 @@ export default function HeartScene({
   }, [hovered]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded">
+    <div className="relative min-h-0 flex-1">
       <Canvas
         camera={{ position: [0, 0.1, 6.8], fov: 40 }}
         dpr={[1, 1.5]}
@@ -161,6 +172,7 @@ export default function HeartScene({
         }}
       >
         <color attach="background" args={["#141a26"]} />
+        <TwinClock timing={timing} running={beating} />
         <Lighting />
 
         {/* BVH keeps pointer and label-occlusion raycasts cheap on the dense surface mesh. */}
@@ -175,7 +187,8 @@ export default function HeartScene({
                   mode={mode}
                   xray={xray}
                   chest={chest ? layers : null}
-                  bpm={beating ? bpm : 0}
+                  twin={twin}
+                  timing={timing}
                   onSelect={onSelect}
                   onHover={setHovered}
                   onPick={setPick}
@@ -192,7 +205,8 @@ export default function HeartScene({
                   hovered={hovered ?? highlight}
                   mode={mode}
                   pins={pins}
-                  bpm={beating ? bpm : 0}
+                  twin={twin}
+                  timing={timing}
                   onSelect={onSelect}
                   onHover={setHovered}
                   onReady={setSpecimenViews}
@@ -206,7 +220,8 @@ export default function HeartScene({
               hovered={hovered ?? highlight}
               mode={mode}
               pins={pins}
-              bpm={beating ? bpm : 0}
+              twin={twin}
+              timing={timing}
               onSelect={onSelect}
               onHover={setHovered}
             />
@@ -350,7 +365,15 @@ export default function HeartScene({
           className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
           title="Toggle heartbeat animation (rate = patient pulse)"
         >
-          {beating ? `♥ ${bpm} bpm` : "♡ paused"}
+          {beating ? `♥ ${bpm}` : "♡ paused"}
+        </button>
+        <button
+          onClick={() => setShowEcg((e) => !e)}
+          aria-pressed={showEcg}
+          className={`rounded px-2 py-1 ${showEcg ? "bg-emerald-800 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+          title="Illustrative ECG monitor built from the patient's recorded findings, in step with the heartbeat"
+        >
+          ECG
         </button>
         <button
           onClick={() => setFx((f) => !f)}
@@ -448,6 +471,12 @@ export default function HeartScene({
         <BandLegend />
       </div>
     </div>
+    {showEcg && (
+      <div className="h-[92px] shrink-0">
+        <EcgMonitor params={twin} timing={timing} />
+      </div>
+    )}
+    </div>
   );
 }
 
@@ -470,6 +499,12 @@ function Lighting() {
       </Environment>
     </>
   );
+}
+
+/** Advances the shared heart clock once per frame (before any heart reads it). */
+function TwinClock({ timing, running }: { timing: BeatTiming; running: boolean }) {
+  useFrame((_, dt) => advanceClock(dt, timing, running));
+  return null;
 }
 
 /** Development only: exposes the three.js state as window.__cv for scripted checks. */
@@ -570,6 +605,11 @@ function BandLegend() {
   );
 }
 
+function initialModel(): HeartModel {
+  const h = new URLSearchParams(window.location.search).get("heart");
+  return h === "atlas" ? "atlas" : h === "schematic" ? "schematic" : "specimen";
+}
+
 function reducedMotion() {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
@@ -634,28 +674,26 @@ interface HeartProps {
   hovered: Vessel | null;
   mode: ViewMode;
   pins: boolean;
-  bpm: number;
+  twin: TwinParams;
+  timing: BeatTiming;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
 }
 
-function Heart({ probs, selected, hovered, mode, pins, bpm, onSelect, onHover }: HeartProps) {
+function Heart({ probs, selected, hovered, mode, pins, twin, timing, onSelect, onHover }: HeartProps) {
   const ventricles = useRef<THREE.Group>(null);
   const atria = useRef<THREE.Group>(null);
   const outflow = useRef<THREE.Group>(null);
   const myocardium = useRef<THREE.Mesh>(null);
-  const phase = useRef(0);
 
-  useFrame((_, dt) => {
-    phase.current = (phase.current + (dt * bpm) / 60) % 1;
-    const t = phase.current;
-    const pulse = (c: number, w: number) => (bpm > 0 ? Math.exp(-(((t - c) / w) ** 2)) : 0);
-    // Atrial kick first, then ventricular systole (which also distends the great arteries).
-    const a = pulse(0.02, 0.05);
-    const v = pulse(0.16, 0.07) + 0.25 * pulse(0.34, 0.05);
-    ventricles.current?.scale.set(1 - 0.035 * v, 1 - 0.018 * v, 1 - 0.035 * v);
-    atria.current?.scale.setScalar(1 - 0.04 * a + 0.015 * v);
-    outflow.current?.scale.setScalar(1 + 0.008 * v);
+  // Function twin: atrial kick after the P wave, then ventricular ejection scaled by the patient's EF
+  // (which also distends the great arteries, more with higher blood pressure); LBBB adds apical rocking.
+  useHeartMotion(twin, timing, (m) => {
+    const v = m.ventricular;
+    ventricles.current?.scale.set(1 - m.squeeze * v, 1 - 0.5 * m.squeeze * v, 1 - m.squeeze * v);
+    if (ventricles.current) ventricles.current.rotation.z = 0.05 * m.rock;
+    atria.current?.scale.setScalar(1 - 0.045 * m.atrial + 0.015 * v);
+    outflow.current?.scale.setScalar(1 + m.aortic * v);
   });
 
   return (

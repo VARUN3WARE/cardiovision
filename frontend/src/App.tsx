@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import FeatureInput, { type Source } from "./components/FeatureInput";
+import FeatureInput, { presets, type Source } from "./components/FeatureInput";
 import HeartScene, { type Vessel } from "./components/HeartScene";
 import ClinicalDashboard from "./components/ClinicalDashboard";
 import ExplanationPanel from "./components/ExplanationPanel";
@@ -8,15 +8,22 @@ import {
   ApiError, explain, getFeatures, getHealth, getMetrics,
   type ExplainResponse, type FeaturesResponse, type MetricsResponse,
 } from "./api/client";
-import { DEMO_PATIENT, toPayload, validate, type FormValues } from "./fieldSpec";
+import { DEMO_PATIENT, fromFeatures, toPayload, validate, type FormValues } from "./fieldSpec";
 import { configureBands, formatPct } from "./risk";
 import { VESSELS } from "./anatomy/registry";
 
 type ApiStatus = "checking" | "online" | "models_missing" | "offline";
 
+/** Deep link: ?patient=<preset id> (low, lad, rca, triple, uncertain) opens that dataset patient. */
+function initialPatient(): { values: FormValues; source: Source } {
+  const id = new URLSearchParams(window.location.search).get("patient");
+  const p = presets.find((x) => x.id === id);
+  return p ? { values: fromFeatures(p.features), source: { kind: "preset", preset: p } } : { values: DEMO_PATIENT, source: { kind: "demo" } };
+}
+
 export default function App() {
-  const [values, setValues] = useState<FormValues>(DEMO_PATIENT);
-  const [source, setSource] = useState<Source>({ kind: "demo" });
+  const [values, setValues] = useState<FormValues>(() => initialPatient().values);
+  const [source, setSource] = useState<Source>(() => initialPatient().source);
   const [quick, setQuick] = useState(false);
   const [live, setLive] = useState(true);
 

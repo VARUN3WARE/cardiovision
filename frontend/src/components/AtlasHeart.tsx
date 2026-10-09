@@ -1,4 +1,4 @@
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import type { ThreeEvent } from "@react-three/fiber";
 import { Html, useGLTF } from "@react-three/drei";
 import {
   Suspense, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
@@ -13,6 +13,8 @@ import {
 } from "./atlasAnatomy";
 import { patchMaterial } from "./atlasMaterials";
 import { NEUTRAL_ARTERY, fbm, riskColor } from "./heartAnatomy";
+import type { BeatTiming, TwinParams } from "../twin/twin";
+import { useHeartMotion } from "../twin/useHeartMotion";
 import { UNMODELLED, VESSEL, VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
 
 /** Which chest layers to draw around the heart. */
@@ -40,7 +42,8 @@ interface Props {
   mode: "arteries" | "territories";
   xray: boolean;
   chest: ChestLayers | null;
-  bpm: number;
+  twin: TwinParams;
+  timing: BeatTiming;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
   onPick: (pick: AtlasPick | null) => void;
@@ -104,6 +107,17 @@ const branchName = (part: AtlasPart, e: ThreeEvent<PointerEvent | MouseEvent>) =
   return e.face ? part.branches[Math.round(br.getX(e.face.a))] : undefined;
 };
 
+/** Children transform (scale / rotate) about `at` instead of the origin. */
+function Pivoted({ at, innerRef, children }: { at: THREE.Vector3; innerRef: RefObject<THREE.Group>; children: React.ReactNode }) {
+  return (
+    <group position={at}>
+      <group ref={innerRef}>
+        <group position={[-at.x, -at.y, -at.z]}>{children}</group>
+      </group>
+    </group>
+  );
+}
+
 /** Dense meshes get a BVH so pointer and label-occlusion raycasts stay cheap. */
 function useBvh(parts: AtlasPart[]) {
   useMemo(() => {
@@ -113,7 +127,7 @@ function useBvh(parts: AtlasPart[]) {
 
 /** BodyParts3D atlas heart: every coronary branch is a named FMA structure coloured by its vessel's model. */
 export default function AtlasHeart(props: Props) {
-  const { probs, selected, hovered, mode, xray, chest, bpm, onSelect, onHover, onPick, onReady } = props;
+  const { probs, selected, hovered, mode, xray, chest, twin, timing, onSelect, onHover, onPick, onReady } = props;
   const gltf = useGLTF(ATLAS_HEART_URL, false, true); // meshopt-compressed; decoder is bundled, no CDN
   const atlas = useMemo(() => prepareAtlasHeart(gltf.scene), [gltf.scene]);
   useBvh(atlas.parts);
@@ -121,9 +135,10 @@ export default function AtlasHeart(props: Props) {
   const wallRef = useRef<THREE.Mesh>(null);
   const atriaRef = useRef<THREE.Mesh>(null);
   const vesselsRef = useRef<THREE.Group>(null);
-  const beat = useRef<THREE.Group>(null);
+  const vent = useRef<THREE.Group>(null);
+  const atr = useRef<THREE.Group>(null);
+  const outflow = useRef<THREE.Group>(null);
   const root = useRef<THREE.Group>(null);
-  const phase = useRef(0);
   const tipSetter = useRef<(t: Tip | null) => void>(() => {});
   const tipApi = useMemo(() => ({
     show: (e: ThreeEvent<PointerEvent>, text: string, sub?: string) => {
@@ -137,12 +152,27 @@ export default function AtlasHeart(props: Props) {
     onReady(atlas.views);
   }, [atlas, onReady]);
 
-  useFrame((_, dt) => {
-    phase.current = (phase.current + (dt * bpm) / 60) % 1;
-    const t = phase.current;
-    const pulse = (c: number, w: number) => (bpm > 0 ? Math.exp(-(((t - c) / w) ** 2)) : 0);
-    const v = pulse(0.16, 0.07) + 0.25 * pulse(0.34, 0.05);
-    beat.current?.scale.set(1 - 0.022 * v, 1 - 0.012 * v, 1 - 0.022 * v);
+  // Pivots: each structure contracts about its own centre.
+  const pivots = useMemo(() => {
+    const centre = (keys: string[]) => {
+      const box = new THREE.Box3();
+      for (const k of keys) {
+        const g = atlas.parts.find((p) => p.key === k)?.geometry;
+        if (g?.boundingBox) box.union(g.boundingBox);
+      }
+      return box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+    };
+    return { vent: centre(["ventricles"]), atr: centre(["atria"]), out: centre(["aorta", "pulmonary"]) };
+  }, [atlas]);
+
+  // Function twin: ventricles squeeze with the patient's EF, atria kick after the P wave, the great
+  // arteries distend with ejection; in LBBB the ventricles rock (septum early, lateral wall late).
+  useHeartMotion(twin, timing, (m) => {
+    const v = m.ventricular;
+    vent.current?.scale.set(1 - m.squeeze * v, 1 - 0.55 * m.squeeze * v, 1 - m.squeeze * v);
+    if (vent.current) vent.current.rotation.z = 0.05 * m.rock;
+    atr.current?.scale.setScalar(1 - 0.05 * m.atrial + 0.012 * v);
+    outflow.current?.scale.setScalar(1 + m.aortic * v);
   });
 
   const wall = part("ventricles")!;
@@ -152,14 +182,8 @@ export default function AtlasHeart(props: Props) {
     <TipContext.Provider value={tipApi}>
       <group ref={root} scale={ATLAS_SCALE}>
         <HoverTip setter={tipSetter} />
-        <group ref={beat}>
+        <Pivoted at={pivots.vent} innerRef={vent}>
           <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
-          {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={xray} />}
-          <group ref={vesselsRef}>
-            {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={xray} sheen />}
-            {part("pulmonary") && <Tissue part={part("pulmonary")!} color="#c47a72" xray={xray} sheen />}
-            {part("venae_cavae") && <Tissue part={part("venae_cavae")!} color="#6e3442" xray={xray} />}
-          </group>
           {part("cardiac_veins") && <CardiacVeins part={part("cardiac_veins")!} />}
           {atlas.parts.filter((p) => p.layer === "coronary").map((p) => (
             <Coronary key={p.key} part={p} probs={probs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onPick={onPick} />
@@ -180,7 +204,17 @@ export default function AtlasHeart(props: Props) {
               />
             );
           })}
-        </group>
+        </Pivoted>
+        <Pivoted at={pivots.atr} innerRef={atr}>
+          {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={xray} />}
+        </Pivoted>
+        <Pivoted at={pivots.out} innerRef={outflow}>
+          <group ref={vesselsRef}>
+            {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={xray} sheen />}
+            {part("pulmonary") && <Tissue part={part("pulmonary")!} color="#c47a72" xray={xray} sheen />}
+            {part("venae_cavae") && <Tissue part={part("venae_cavae")!} color="#6e3442" xray={xray} />}
+          </group>
+        </Pivoted>
         {chest && (
           <Suspense fallback={null}>
             <Thorax center={atlas.center} layers={chest} />

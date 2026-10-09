@@ -1,4 +1,4 @@
-> **Status: proposed (9 Oct 2026), awaiting your choice of modules.** Builds on `docs/plan-3d-and-explanations.md`
+> **Status: in progress (9 Oct 2026). T1 function twin: done** (shared heart clock, EF-scaled squeeze, atrial kick, BP-scaled aortic distension, LBBB apical rocking, two-lead illustrative ECG monitor, `?patient=` / `?heart=` deep links). Builds on `docs/plan-3d-and-explanations.md`
 > (BodyParts3D atlas, encoding, inspector, bullseye and registry are done; model facts, what-if, docs and video are open).
 
 # CardioVision Twin: plan for a stand-out final version (9 to 14 Oct)

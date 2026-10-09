@@ -235,6 +235,20 @@ wording ("driven mainly by", not "because of"); angiography verdicts say "<50% /
 "normal"); inspector states the threshold's measured sensitivity/specificity; "premature" removed from FH;
 demo script no longer says the LCX card is dashed (AUC 0.761 >= 0.75).
 
+## 7h. Function twin (T1 of docs/plan-twin-and-simulation.md, 9 Oct)
+
+- frontend/src/twin/twin.ts: `twinFromResult` reads the patient's pulse, EF, BP and ECG findings from the CAD
+  explanation (values as the model saw them; imputed ones flagged), `beatTiming` (PR 0.16 s, QRS 0.09/0.14 s,
+  Bazett QT), a shared `heartClock` advanced at 500 Hz ticks by <TwinClock> inside the Canvas, `mechanics`
+  (atrial kick after P, ventricular contraction from QRS+0.04 s to end of T scaled by EF, aortic distension by
+  BP, LBBB apical rocking) and `ecgSample` (sum-of-Gaussians leads II and V1 with ST/T, Q, LVH, LBBB, RBBB).
+- useHeartMotion drives all three hearts (Atlas: ventricles, atria and great vessels each pivot about their own
+  centre). twin/EcgMonitor.tsx is a sweeping two-lead monitor under the 3D view (toggle "ECG").
+- Deep links: ?patient=low|lad|rca|triple|uncertain and ?heart=atlas|realistic|schematic.
+- Hidden browser pane = throttled rAF, so check visuals with headless Chrome:
+  google-chrome --headless=new --use-angle=swiftshader --enable-unsafe-swiftshader --window-size=1440,900
+  --virtual-time-budget=20000 --screenshot=out.png "http://localhost:5173/?patient=low&heart=atlas"
+
 ## 8. What's NEXT, in priority order
 
 Done on 8 Oct: physiological breakdown (requirement 3c), technical documentation
