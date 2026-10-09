@@ -14,9 +14,11 @@ interface Props {
   /** Hovering the bullseye highlights that artery in the 3D view. */
   onHover?: (v: Vessel | null) => void;
   preset: Preset | null;
+  /** The result is a what-if scenario, not the patient's recorded values. */
+  scenario?: boolean;
 }
 
-export default function ClinicalDashboard({ result, metrics, selected, onSelect, onHover = () => {}, preset }: Props) {
+export default function ClinicalDashboard({ result, metrics, selected, onSelect, onHover = () => {}, preset, scenario = false }: Props) {
   if (!result) {
     return (
       <div className="text-sm text-gray-400">
@@ -32,6 +34,12 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
 
   return (
     <div className="space-y-3" aria-live="polite">
+      {scenario && (
+        <Notice tone="sky">
+          <b>What-if scenario.</b> Estimates for changed model inputs, not this patient's recorded values. Reset in the
+          what-if card below.
+        </Notice>
+      )}
       <div>
         <div className="text-sm text-gray-300">Probability of coronary artery disease</div>
         <div className="flex items-baseline gap-3">

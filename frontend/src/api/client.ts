@@ -83,7 +83,9 @@ export interface FeatureInfo {
   default: number | string;
   min?: number;
   max?: number;
+  p5?: number;
   median?: number;
+  p95?: number;
   prevalence?: number | null;
 }
 
@@ -164,6 +166,15 @@ function toApiError(status: number, body: unknown): ApiError {
   // The dev proxy answers an empty 5xx when the backend is down: treat it as offline (status 0).
   if (status >= 500 && !body) return new ApiError(OFFLINE, 0);
   return new ApiError(typeof detail === "string" ? detail : `Request failed (${status}).`, status);
+}
+
+/** Fast estimate without attributions (used while a what-if slider is being dragged). */
+export function predict(features: Record<string, unknown>, signal?: AbortSignal): Promise<PredictionResponse> {
+  return request<PredictionResponse>("/predict", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(features),
+  }, signal);
 }
 
 export function explain(features: Record<string, unknown>, signal?: AbortSignal): Promise<ExplainResponse> {

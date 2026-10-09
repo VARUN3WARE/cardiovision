@@ -4,6 +4,9 @@ import HeartScene, { type Vessel } from "./components/HeartScene";
 import ClinicalDashboard from "./components/ClinicalDashboard";
 import ExplanationPanel from "./components/ExplanationPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
+import WhatIfPanel from "./components/WhatIfPanel";
+import { useScenario } from "./whatif/useScenario";
+import { scenarioFromQuery } from "./whatif/scenario";
 import {
   ApiError, explain, getFeatures, getHealth, getMetrics,
   type ExplainResponse, type FeaturesResponse, type MetricsResponse,
@@ -47,6 +50,13 @@ export default function App() {
   const clientErrors = useMemo(() => validate(values, quick), [values, quick]);
   const valid = Object.keys(clientErrors).length === 0;
   const stale = result !== null && resultKey !== key;
+
+  // What-if: a scenario on top of the form (the form itself is never edited). Deep link: ?whatif=1&bp=...
+  const [deepScenario] = useState(() => scenarioFromQuery(window.location.search));
+  const [whatIfOpen, setWhatIfOpen] = useState(deepScenario.open);
+  const sc = useScenario(payload, result, deepScenario.scenario);
+  // What every view shows: the scenario while it is active (keeping the patient's result until its first reply).
+  const shown = sc.active && sc.result ? sc.result : result;
 
   const requestId = useRef(0);
   const controller = useRef<AbortController | null>(null);
@@ -170,13 +180,13 @@ export default function App() {
           />
         </section>
 
-        <section aria-label="3D heart" className="order-2 h-[55vh] min-h-0 rounded bg-slate-800 lg:h-auto">
+        <section aria-label="3D heart" className={`relative order-2 h-[55vh] min-h-0 rounded bg-slate-800 lg:h-auto ${sc.active ? "ring-2 ring-sky-500" : ""}`}>
           <ErrorBoundary fallback={<HeartFallback result={result} />}>
             <HeartScene
               // Keep the last estimate while inputs change (colours glide to the new one; no grey flash).
-              probs={result ? result.vessel_probabilities : null}
+              probs={shown ? shown.vessel_probabilities : null}
               pending={stale}
-              result={result}
+              result={shown}
               metrics={metrics}
               highlight={highlight}
               selected={selected}
@@ -184,6 +194,7 @@ export default function App() {
               bpm={bpm}
             />
           </ErrorBoundary>
+          {sc.active && <ScenarioBadge updating={sc.updating} onReset={() => sc.dispatch({ type: "reset" })} />}
         </section>
 
         <section aria-label="Results" className="order-1 space-y-4 overflow-auto lg:order-3">
@@ -206,16 +217,56 @@ export default function App() {
             <div className={`space-y-4 transition-opacity ${stale ? "opacity-50" : ""}`}>
               <div className="rounded bg-slate-800 p-4">
                 <h2 className="mb-3 text-sm font-semibold text-gray-200">Risk estimate</h2>
-                <ClinicalDashboard result={result} metrics={metrics} selected={selected} onSelect={setSelected} onHover={setHighlight} preset={shownPreset} />
+                <ClinicalDashboard
+                  result={shown}
+                  metrics={metrics}
+                  selected={selected}
+                  onSelect={setSelected}
+                  onHover={setHighlight}
+                  // Angiography comparisons belong to the recorded patient, not to a scenario.
+                  preset={sc.active ? null : shownPreset}
+                  scenario={sc.active}
+                />
               </div>
+              <WhatIfPanel
+                open={whatIfOpen}
+                onToggle={() => setWhatIfOpen((o) => !o)}
+                scenario={sc.scenario}
+                dispatch={sc.dispatch}
+                active={sc.active}
+                payload={payload}
+                base={result}
+                scenarioResult={sc.result}
+                info={info}
+                updating={sc.updating}
+                error={sc.error}
+                onDragStart={sc.beginDrag}
+              />
               <div className="rounded bg-slate-800 p-4">
-                <h2 className="mb-3 text-sm font-semibold text-gray-200">Why this estimate?</h2>
-                <ExplanationPanel result={result} metrics={metrics} info={info} selected={selected} onSelect={setSelected} />
+                <h2 className="mb-3 text-sm font-semibold text-gray-200">
+                  Why this estimate?{sc.active && <span className="ml-2 text-[11px] font-normal text-sky-300">what-if scenario</span>}
+                </h2>
+                <div className={`transition-opacity ${sc.explanationsLag ? "opacity-60" : ""}`}>
+                  <ExplanationPanel result={shown} metrics={metrics} info={info} selected={selected} onSelect={setSelected} />
+                </div>
               </div>
             </div>
           </ErrorBoundary>
         </section>
       </main>
+    </div>
+  );
+}
+
+/** Over the 3D view while a what-if scenario is shown (rendered by App, outside the 3D scene). */
+function ScenarioBadge({ updating, onReset }: { updating: boolean; onReset: () => void }) {
+  return (
+    <div role="status" className="absolute right-3 top-12 z-20 flex items-center gap-2 rounded border border-sky-500 bg-sky-950/90 px-2 py-1 text-[11px] text-sky-100 shadow">
+      <span className={`h-2 w-2 rounded-full bg-sky-400 ${updating ? "animate-pulse" : ""}`} />
+      <span>
+        <b>Scenario active</b>: what-if inputs, not the recorded values
+      </span>
+      <button onClick={onReset} className="rounded bg-sky-600 px-1.5 py-0.5 font-semibold text-white hover:bg-sky-500">Reset to patient</button>
     </div>
   );
 }
