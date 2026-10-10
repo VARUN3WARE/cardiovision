@@ -67,7 +67,8 @@ leakage. So we set ourselves two goals: make the risk visible on the anatomy, an
 - **Explanations.** Exact additive attributions (linear terms plus native TreeSHAP, averaged across the blend)
   that sum to the model output, checked on every request.
 - **API (FastAPI).** Validation, imputation contract, four models, thresholds, calibration bands,
-  out-of-range warnings and attributions in about 130 ms per request.
+  out-of-range warnings and attributions in about 140 ms per request (measured median; /predict, used while
+  dragging what-if sliders, about 40 ms).
 - **Front end (React, TypeScript, Tailwind).** One field specification drives the form; live, debounced
   re-estimation with stale-result detection. The what-if calls a fast endpoint at most every 120 ms while a
   slider moves (one request in flight) and fetches attributions once on release.
