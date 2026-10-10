@@ -85,8 +85,8 @@ def evaluation_figure():
 
 
 def architecture_figure():
-    fig, ax = plt.subplots(figsize=(7.0, 2.6))
-    ax.set(xlim=(0, 100), ylim=(0, 36))
+    fig, ax = plt.subplots(figsize=(7.0, 2.9))
+    ax.set(xlim=(0, 100), ylim=(0, 40))
     ax.axis("off")
 
     def box(x, y, w, h, title, lines, accent=False):
@@ -101,43 +101,53 @@ def architecture_figure():
             ax.text((x1 + x2) / 2, y1 + (-1.0 if below else 1.0), label, fontsize=5.0, color=INK2, ha="center",
                     va="top" if below else "bottom", linespacing=1.2)
 
-    box(0.5, 20, 28, 15.5, "Training  (backend/train.py)", [
+    box(0.5, 24, 28, 15.5, "Training  (backend/train.py)", [
         "UCI Z-Alizadeh Sani: 303 x 55 inputs",
         "Clinical composites (stateless)",
         "4 blends: logistic reg. + boosted trees",
         "5x5 repeated CV, nested thresholds,",
         "calibration bands"])
-    box(0.5, 0.5, 28, 15.5, "Artefacts  (backend/models/)", [
-        "cad / lad / lcx / rca .joblib",
-        "metrics.json (CV, operating points)",
-        "feature_info.json (ranges, defaults)",
-        "oof_predictions.npz (example patients)"])
-    box(36, 0.5, 28, 35, "FastAPI  (backend/app/)", [
-        "POST /explain, /predict",
+    box(0.5, 0.5, 28, 19.5, "Models + scripts  (backend/)", [
+        "models/: 4 .joblib, metrics.json,",
+        "  feature_info.json, oof_predictions.npz",
+        "verify_models.py -> verification.json",
+        "  (permutation, fresh splits, baselines)",
+        "make_presets.py -> example patients",
+        "make_cohort.py -> cohort.json",
+        "  (similarity weights, 3D t-SNE map)"])
+    box(36, 0.5, 28, 39, "FastAPI  (backend/app/)", [
+        "POST /explain  (median 140 ms)",
         "  1. validate input (pydantic)",
         "  2. fill unrecorded values, encode",
         "  3. 4 models -> probability, threshold,",
         "      risk band, range warnings",
         "  4. exact attributions per model",
-        "      (linear terms + TreeSHAP)",
+        "      (linear terms + TreeSHAP),",
+        "      base + sum = log-odds, checked",
+        "POST /predict  (40 ms, no attributions;",
+        "  what-if sliders while dragging)",
         "GET /metrics  /features  /health",
         "",
         "Safety disclaimer in every response"], accent=True)
-    box(71.5, 20, 28, 15.5, "React app  (frontend/src/)", [
-        "Clinical form: quick / full mode,",
-        "validation, live re-estimation",
-        "Risk dashboard, calibration bands",
-        "Plain-language SHAP + breakdown"])
-    box(71.5, 0.5, 28, 15.5, "3D view  (React Three Fiber)", [
-        "Realistic CC BY heart; coronary tree",
-        "snapped into its grooves (BVH)",
-        "Risk colours, territories, selection,",
-        "camera focus, pins, schematic fallback"])
-    arrow(14.5, 19.6, 14.5, 16.4)
-    arrow(28.9, 8.0, 35.6, 8.0, "load")
-    arrow(71.1, 30.0, 64.4, 30.0, "patient\nfeatures")
-    arrow(64.4, 24.0, 71.1, 24.0, "estimates +\nattributions", below=True)
-    arrow(85.5, 19.6, 85.5, 16.4)
+    box(71.5, 24, 28, 15.5, "React app  (frontend/src/)", [
+        "Clinical form: quick / full, validation,",
+        "  live re-estimation",
+        "Dashboard: bands, AUC, bullseye",
+        "Explanations, evidence by data type",
+        "What-if card; similar patients (kNN",
+        "  over cohort.json in the browser)"])
+    box(71.5, 0.5, 28, 19.5, "3D view  (React Three Fiber)", [
+        "Realistic, BodyParts3D Atlas (in the",
+        "  chest) and schematic hearts",
+        "Anatomy registry: model outputs ->",
+        "  arteries, territories, AHA segments",
+        "Function twin + ECG, reasoning streams,",
+        "ischaemia lab (sandbox), story mode"])
+    arrow(14.5, 23.6, 14.5, 20.4)
+    arrow(28.9, 10.0, 35.6, 10.0, "load")
+    arrow(71.1, 34.0, 64.4, 34.0, "patient\nfeatures")
+    arrow(64.4, 28.0, 71.1, 28.0, "estimates +\nattributions", below=True)
+    arrow(85.5, 23.6, 85.5, 20.4)
     fig.savefig(OUT / "architecture.png", dpi=300, bbox_inches="tight", pad_inches=0.02)
     plt.close(fig)
 

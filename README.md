@@ -10,7 +10,7 @@ Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosi
 | 95% CI (bootstrap, independent re-run) | 0.91–0.97 | 0.82–0.91 | 0.71–0.81 | 0.70–0.81 |
 | Accuracy (at 0.5) | 0.883 | 0.799 | 0.700 | 0.682 |
 
-**Documentation:** [technical documentation (PDF, 5 pages)](docs/CardioVision-Technical-Documentation.pdf) ·
+**Documentation:** [technical documentation (PDF, 6 pages)](docs/CardioVision-Technical-Documentation.pdf) ·
 [source](docs/technical-documentation.md) · [model report](docs/model-report.md) (methods, operating points,
 calibration, literature comparison, limitations) · [model verification](docs/model-verification.md) (leakage,
 fresh splits, baselines, vessel specificity) · [demo video script](docs/demo-script.md) ·
@@ -85,11 +85,11 @@ loads a dataset patient and `?heart=realistic|atlas|schematic` picks the heart.
   angiograms, and a 3D t-SNE map of the cohort coloured by outcome. `?patient=triple&cohort=1`
 - **Story mode**: the **▶ Story** button plays a captioned 92-second tour of the current patient on the Atlas
   heart in six steps: the chest fly-in; the function twin; the reasoning streams for overall CAD; the artery in
-  the highest band with its inspector ("independent estimates, not a culprit ranking"); the ischaemia lab
-  narrowing that artery 0 → 85% and then exercising rest → peak; and a closing card (reference anatomy, referral
-  cohort, cross-validated AUCs with bootstrap CIs, decision support only). Play/pause, previous/next, progress
-  dots, arrow keys, Esc; Exit gives back your exact view (heart, modes, lab, selection, camera) and never changes
-  the patient's data or a what-if scenario; reduced motion gives static steps.
+  the highest band with its inspector ("independent estimates, not a culprit ranking"); the ischaemia lab with a
+  generic narrowing of that artery, 0 → 85%, then exercise rest → peak; and a closing card (reference anatomy,
+  referral cohort, cross-validated AUCs with bootstrap CIs, decision support only). Play/pause, previous/next,
+  progress dots, arrow keys, Esc; Exit gives back your exact view (heart, modes, lab, selection, camera) and never
+  changes the patient's data or a what-if scenario; reduced motion gives static steps.
   `?patient=triple&story=1` (plays from the start), `&step=1..6` (that step as it ends, paused), `&play=1`
   (plays from the start of that step)
 

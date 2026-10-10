@@ -1,7 +1,7 @@
 # HANDOFF -- CardioVision (Track A)
 
 Handoff doc for the next agent (Claude) picking up this project.
-Last updated: 2026-10-10. Done: models (7c), usability (7c), realistic heart (7d), BodyParts3D atlas (7e), 3D encoding and inspection (7f), medical audit (7g), function twin (7h) and the standout layer T1-T6, story mode included (7i). Remaining: final regression, technical PDF refresh, demo video, Devpost (section 8).
+Last updated: 2026-10-10. Done: models (7c), usability (7c), realistic heart (7d), BodyParts3D atlas (7e), 3D encoding and inspection (7f), medical audit (7g), function twin (7h) and the standout layer T1-T6, story mode included (7i). Remaining: final regression, demo video, Devpost (section 8).
 
 ## 1. What this project is
 
@@ -27,7 +27,7 @@ Track C (speech analytics) was evaluated and rejected. See ../hackathon_details.
 | System Integration | 15% | live updates, validated form, quick mode, error handling; what-if re-runs the models while dragging; the twin follows the patient's recorded values |
 | Technical Implementation | 10% | harness + experiments + model report + verification script, deterministic generators, 109 vitest tests, pinned deps, fresh-clone path |
 
-Biggest remaining wins: the technical PDF refresh, the demo video, Devpost.
+Biggest remaining wins: the demo video, Devpost.
 
 ## 3. How to run it
 
@@ -415,8 +415,13 @@ script, Devpost text, README and plan updated for the standout layer, story mode
    1024x768 with the CDP capture (5 presets x 3 hearts with labels matching the cards; ?reasoning, ?whatif, ?lab,
    ?cohort, ?story=1&step=1..6), console clean, then npm test, npm run build, test_pipeline.py and
    verify_models.py (numbers unchanged).
-3. Technical PDF refresh (handled separately): add the standout layer and the independent verification to
-   docs/technical-documentation.md, rebuild with docs/build_pdf.sh, stay within 6 pages.
+3. Technical PDF refresh: done on 10 Oct (6 of 6 allowed pages, about 6 lines free on page 6). Section 7 covers the
+   twin and simulation layer, Section 4 the independent verification (table: fresh-split AUC with CIs, baselines,
+   calibration slopes, AUC within CAD patients; leakage, vessel specificity, clinical direction), Section 5 the
+   atlas heart, and Section 1 the anatomy registry and the measured latency (/explain median 140 ms, p90 147;
+   /predict 40 ms). New figures from CDP captures: figures/app-overview.jpg (atlas heart in the chest, patient
+   #173) and twin-reasoning.jpg, twin-lab.jpg, twin-story.jpg; architecture.png redrawn by docs/make_figures.py.
+   Rebuild with docs/build_pdf.sh; any addition needs a matching cut.
 4. Re-time 3D frames on the integrated GPU with Reasoning and Lab on; update the README table.
 5. Decide on the plan's "model facts tab" (listed as never-cut, not built): in the app the cards and inspector
    show cross-validated AUCs, while the verification (CIs, permutation, baselines, vessel specificity) is only in
@@ -456,6 +461,6 @@ BodyParts3D atlas heart in a ghosted chest whose 59 named coronary branches are 
 (schematic heart as toggle and fallback). One band colour scale everywhere, vessel inspector, bullseye,
 registry-driven views. Standout layer (docs/plan-twin-and-simulation.md, section 7i): function twin + ECG,
 reasoning flow, what-if, ischaemia lab, similar patients and story mode are done.
-Commit + push to main after every verified change, only your own paths. Remaining: final regression, technical
-PDF refresh, record the video, fill Devpost, team names.
+Commit + push to main after every verified change, only your own paths. Remaining: final regression, record the
+video, fill Devpost, team names.
 Gotchas in sections 6, 7b, 7d and 7i. Don't switch tracks.
