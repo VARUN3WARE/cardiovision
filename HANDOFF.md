@@ -25,7 +25,7 @@ Track C (speech analytics) was evaluated and rejected. See ../hackathon_details.
 | 3D Visualization | 25% | Realistic, BodyParts3D Atlas (in the chest) and Schematic hearts; function twin + ECG, reasoning streams, ischaemia lab, 3D cohort map, story mode |
 | Clinical Interpretability | 20% | exact per-model attributions, plain-language panel, calibration bands, evidence by data type, what-if sensitivity, ischaemic cascade, similar patients |
 | System Integration | 15% | live updates, validated form, quick mode, error handling; what-if re-runs the models while dragging; the twin follows the patient's recorded values |
-| Technical Implementation | 10% | harness + experiments + model report + verification script, deterministic generators, 109 vitest tests, pinned deps, fresh-clone path |
+| Technical Implementation | 10% | harness + experiments + model report + verification script, deterministic generators, 111 vitest tests, pinned deps, fresh-clone path |
 
 Biggest remaining wins: the demo video, Devpost.
 
@@ -356,7 +356,7 @@ show recorded values".
 Also on 10 Oct: d36a974 shared obesity_flag() with a 1e-9 tolerance (64 kg / 1.60 m gave BMI 24.999...); 67790c7
 "not entered" wording everywhere (findings count as absent, measurements take the cohort median).
 
-**T6 Story mode** (fea1a35, screen-reader captions 23d6f4c)
+**T6 Story mode** (fea1a35, screen-reader captions 23d6f4c, review fixes 59587f8)
 - Files: frontend/src/story/storySteps.ts (+ test: script, deep link, topArtery, labDemo, captions), StoryOverlay.tsx
   (bar, caption, closing card), useStoryClock.ts, verification.ts (+ test: the AUC CIs, 303 patients and 71% CAD
   checked against backend/models/verification.json); HeartScene (toolbar "▶ Story", step views, snapshot/restore);
@@ -380,14 +380,27 @@ Also on 10 Oct: d36a974 shared obesity_flag() with a 1e-9 tolerance (64 kg / 1.6
   Narrow views: two-row bar, captions clamped to three lines until tapped, legend collapsed, closing card in the
   legend's place. Verified on 10 Oct: ?patient=triple&story=1 plays step 1, Esc returns to the Realistic heart the
   tab opened with, console clean.
+- Independent review (read-only, 10 Oct; 12 starting states x 3 exits restored exactly, every caption number matched
+  the app): 2 major + 7 minor findings, all fixed in 59587f8. The lab step's caption said "resting flow holds" at 85%
+  narrowing, but the panel showed resting flow already short for 4 of 5 presets (resting flow starts to fall at ~84%
+  even at the reference pulse x BP of 9,100, earlier at higher resting demand): the caption now reports this heart's
+  rest flow, maximal flow and unmet share with the panel's rounding (unit test at 85% and rest). The 3-line clamp on
+  narrow views hid the honesty qualifiers: every caption now leads with its qualifier (tested: within the first 90
+  characters). Also fixed: "(highest band)" only when the artery is alone in its band (else "highest chance; all
+  three are in the higher band" or "all three read <5% in the lower band"); stale states named on every step
+  ("previous estimate: inputs changed", "updating"); Pause (waiting) while the heart loads and the fly-in waits for
+  play; arrow keys stop at the ends; deep links wait for the camera so Exit restores it; Replay only at the end; the
+  progress line follows the story clock; focus moves to the controls on start and back to Story on exit; the closing
+  card is announced, leads with the decision-support line and keeps its buttons in view; the flow curve's
+  screen-reader label gives this heart's resting-flow onset.
 
 **Working conventions and gotchas**
 - Lanes (two agents, one checkout): lane A owns HeartScene, AtlasHeart, SpecimenHeart, atlasAnatomy, atlasMaterials,
   ArteryTube, ExplanationPanel, VesselInspector, twin/, reasoning/, lab/, story/; lane B owns App.tsx, api/client.ts,
   ClinicalDashboard, WhatIfPanel, whatif/, cohort/ and backend offline scripts. Commit only your own paths
   (git commit -m ... -- <paths>); never git add -A.
-- Checks before every commit: (cd frontend && npx tsc -b && npm test && npm run build); 109 tests in 8 files at
-  23d6f4c. Never hard-code ["lad","lcx","rca"]: use anatomy/registry.ts (VESSELS, VESSEL_IDS, VESSEL).
+- Checks before every commit: (cd frontend && npx tsc -b && npm test && npm run build); 111 tests in 8 files at
+  59587f8. Never hard-code ["lad","lcx","rca"]: use anatomy/registry.ts (VESSELS, VESSEL_IDS, VESSEL).
 - Toolbar: 2 rows at 1440 px, 3 at 1024, 2 at 390; on narrow views X-ray, HD, Reset and the A/P/L/R/S/I views move
   into the "⋯" menu.
 - Dev-only globals for scripted checks: window.__cv (R3F state), window.__reasoning, window.__anchors.
@@ -409,7 +422,7 @@ Done on 8 Oct: physiological breakdown (requirement 3c), technical documentation
 docs/make_figures.py), demo script, Devpost text. Done on 10 Oct: T1-T6 and the review fixes of T1-T5 (7i); demo
 script, Devpost text, README and plan updated for the standout layer, story mode included.
 
-1. Story mode (T6): done (fea1a35, 23d6f4c); README bullet and deep links, docs/demo-script.md Scene 9 (4:20-4:45)
+1. Story mode (T6): done (fea1a35, 23d6f4c; review fixes 59587f8); README bullet and deep links, docs/demo-script.md Scene 9 (4:20-4:45)
    and its tab, docs/devpost.md "What it does", docs/plan-twin-and-simulation.md T6 and 7i are updated.
 2. Ischaemia-lab review fixes: done (6d80f98). Next: a final regression of every deep link at 1440x900 and
    1024x768 with the CDP capture (5 presets x 3 hearts with labels matching the cards; ?reasoning, ?whatif, ?lab,

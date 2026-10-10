@@ -132,7 +132,7 @@ three independent per-artery estimates and never a "culprit" vessel.
 - Explanations that are mathematically exact, and data-type streams that add up to the model's log-odds.
 - A heart that beats like the patient's, with an ECG built from their findings, on all three hearts.
 - A physiology lab whose model reproduces the published curve (maximal flow first falls below 95% at about 50%
-  narrowing; resting flow holds to about 84%).
+  narrowing; at a typical resting pulse × pressure, resting flow holds to about 84%).
 - Showing the model's own false alarms and limits in the product instead of hiding them.
 
 ## What we learned

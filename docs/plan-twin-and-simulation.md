@@ -1,7 +1,7 @@
 > **Status (10 Oct 2026): T1–T6 done.** T1 function twin 3538b91 (tests 176ba8d); T3 reasoning flow abf0039
 > (review fixes 089958e); T5 what-if ff40c77 (review fixes 78a1976); T4 twin cohort 4120ac2 (review fixes
-> eae5f5b); T2 ischaemia lab eea1b71 + a1cca8a (review fixes 6d80f98); T6 story mode fea1a35 + 23d6f4c. T1–T5
-> were each reviewed independently. Files, deep links, design decisions and gotchas: HANDOFF.md section 7i; "As
+> eae5f5b); T2 ischaemia lab eea1b71 + a1cca8a (review fixes 6d80f98); T6 story mode fea1a35 + 23d6f4c (review fixes
+> 59587f8). T1–T6 were each reviewed independently. Files, deep links, design decisions and gotchas: HANDOFF.md section 7i; "As
 > built" notes below record where the build differs from this plan. Builds on `docs/plan-3d-and-explanations.md`
 > (BodyParts3D atlas, encoding, inspector, bullseye and registry are done).
 
@@ -20,7 +20,7 @@ anatomy**: three layers, each honest about what it is.
 | **T3 Reasoning flow** | "How did the AI combine the data types to reach this?" | The models' exact attributions | Done: abf0039, 089958e |
 | T4 Twin cohort | "Which real patients look like this one, and what did their angiograms show?" | The 303 patients, held-out predictions | Done: 4120ac2, eae5f5b |
 | T5 What-if | "What moves this estimate?" | Live model re-runs | Done: ff40c77, 78a1976 |
-| T6 Story mode | One button that tells the whole story in 90 seconds (also the video's backbone) | All of the above | Done: fea1a35, 23d6f4c |
+| T6 Story mode | One button that tells the whole story in 90 seconds (also the video's backbone) | All of the above | Done: fea1a35, 23d6f4c (review fixes 59587f8) |
 
 **Why this wins the rubric:**
 - 3D Visualization (25%): animated, patient-driven, interactive simulation, not a static coloured model.
@@ -105,7 +105,8 @@ not yet measured.
    - **angina** (the typical chest pain input).
    The order follows Nesto & Kowalchuk, *Am J Cardiol* 1987;59:23C.
 4. A small **flow-reserve curve** marks where the slider sits:
-   - Resting flow holds until about 85% narrowing.
+   - Resting flow holds until about 85% narrowing at the reference resting demand (pulse × BP 9,100); a higher
+     resting pulse × pressure brings that point lower.
    - Maximal (exercise) flow starts falling at about **50%**: *that is why the dataset, and clinicians, use ≥50%.*
    - Source: Gould et al., *Am J Cardiol* 1974;33:87.
 5. Closing line (planned): *"This is why typical angina, wall-motion abnormality and ST depression are the model's
@@ -199,7 +200,7 @@ the heartbeat and ECG keep the recorded values. Deep link `?whatif=1&bp=&fbs=&tg
 - The twin, arteries, bullseye and reasoning streams all update live.
 - Banner: *"How the model's estimate responds, not the effect of treatment."*
 
-### T6. Story mode (P1, about 0.5 day) — done (fea1a35, 23d6f4c)
+### T6. Story mode (P1, about 0.5 day) — done (fea1a35, 23d6f4c; review fixes 59587f8)
 
 **As built:** a toolbar **▶ Story** button plays six captioned steps on the Atlas heart, 92 s in all: chest fly-in
 (12 s); the function twin (15 s); reasoning streams for the overall model (20 s); the inspector on the artery in the
@@ -236,7 +237,7 @@ It doubles as the backbone of the demo video and can be paused or escaped at any
 | Wed 14 | Fresh-clone test | Submit by 14:00 | **Submitted** |
 
 **Actual (10 Oct):** T1 landed on 9 Oct; T3, T5, T4 and T2 on 10 Oct (ahead of the table), each independently
-reviewed, with every review fix committed (T2's last, in 6d80f98). T6 landed the same day (fea1a35, 23d6f4c). The
+reviewed, with every review fix committed (T2's last, in 6d80f98). T6 landed the same day (fea1a35, 23d6f4c) and was reviewed too (fixes 59587f8). The
 model facts tab is not built: in the app the cards and the inspector show each model's cross-validated AUC, and the
 independent verification (CIs, permutation test, baselines, vessel specificity) lives in
 `docs/model-verification.md`; the story's closing card adds the bootstrap 95% CIs.
