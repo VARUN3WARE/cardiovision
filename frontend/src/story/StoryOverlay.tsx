@@ -101,20 +101,35 @@ function StepProgress({ seconds, playing, full }: { seconds: number; playing: bo
 
 /**
  * The step's caption, first in the column of notices under the story bar. Narrow views show its first three lines
- * until it is tapped.
+ * until it is tapped. Screen readers hear it once it has settled (the lab step's numbers change as it plays).
  */
 export function StoryCaption({ text, compact }: { text: string; compact: boolean }) {
   const [open, setOpen] = useState(false);
+  const [spoken, setSpoken] = useState("");
+  useEffect(() => {
+    const id = window.setTimeout(() => setSpoken(text), 1200);
+    return () => window.clearTimeout(id);
+  }, [text]);
   const box = "w-max max-w-full rounded border border-fuchsia-700/70 bg-slate-950/90 px-2.5 py-1 text-center leading-snug text-gray-100 shadow sm:max-w-[min(100%,460px)]";
-  if (!compact) return <div role="status" aria-live="polite" className={`${box} text-[11px]`}>{text}</div>;
+  const live = <span role="status" aria-live="polite" className="sr-only">{spoken}</span>;
+  if (!compact) {
+    return (
+      <div className={`${box} text-[11px]`}>
+        <span aria-hidden>{text}</span>
+        {live}
+      </div>
+    );
+  }
   return (
     <button
       onClick={() => setOpen((o) => !o)}
       aria-expanded={open}
+      aria-label={open ? "Show less of the caption" : "Show the whole caption"}
       title={open ? "Show less" : "Show the whole caption"}
       className={`${box} pointer-events-auto text-[10px] hover:border-fuchsia-500`}
     >
-      <span role="status" aria-live="polite" className={open ? "block" : "line-clamp-3"}>{text}</span>
+      <span aria-hidden className={open ? "block" : "line-clamp-3"}>{text}</span>
+      {live}
     </button>
   );
 }
