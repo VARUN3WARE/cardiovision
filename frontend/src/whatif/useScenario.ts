@@ -1,115 +1,142 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { ApiError, explain, predict, type ExplainResponse } from "../api/client";
-import { applyScenario, isActive, scenarioReducer, throttle, type Payload, type Scenario } from "./scenario";
+import { ApiError, explain, predict, type FeaturesResponse } from "../api/client";
+import {
+  normaliseScenario, scenarioReducer, scenarioRequest, scenarioView, singleFlight, throttle,
+  type Payload, type Scenario, type ScenarioBase, type ScenarioError, type ScenarioReply,
+} from "./scenario";
 
 /** Fast estimates at most this often while a slider is dragged. */
 export const DRAG_THROTTLE_MS = 120;
-/** Settle time before the full explanation is fetched (keyboard steps, toggles, form edits). */
+/** Settle time before the full explanation is fetched (keyboard steps, toggles, a new patient run). */
 const EXPLAIN_DELAY_MS = 150;
 
-interface ScenarioResult {
-  key: string; // request body the result belongs to
-  data: ExplainResponse; // during a drag: fresh probabilities over the last explanations
-  explained: boolean; // explanations match the probabilities
+interface Job {
+  kind: "predict" | "explain";
+  key: string;
+  baseKey: string;
+  body: Payload;
+  scenario: Scenario;
 }
 
 /**
- * Runs the model on the form's payload with the what-if scenario applied. The form is never edited.
- * While dragging: POST /predict, throttled, one request in flight (older ones aborted, stale replies
- * ignored). Otherwise: one POST /explain for the settled scenario so the explanations match.
+ * Runs the models on the patient's submitted values (`base`: the request that produced the patient's result, never
+ * the live form) with the what-if scenario applied; the form is never edited. While dragging: POST /predict,
+ * throttled; otherwise one POST /explain for the settled scenario so the explanations match. One request in flight
+ * at a time (a newer one waits, see singleFlight); replies are keyed by request body and patient run, and
+ * scenarioView decides what every view shows.
  */
-export function useScenario(basePayload: Payload, baseResult: ExplainResponse | null, initial: Scenario) {
-  const [scenario, dispatch] = useReducer(scenarioReducer, initial);
-  const [dragging, setDragging] = useState(false);
-  const [res, setRes] = useState<ScenarioResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const active = isActive(scenario);
-  const body = useMemo(
-    () => (active ? applyScenario(basePayload, scenario, baseResult) : null),
-    [active, basePayload, scenario, baseResult],
+export function useScenario(base: ScenarioBase | null, info: FeaturesResponse | null, initial: Scenario) {
+  const [raw, dispatch] = useReducer(scenarioReducer, initial);
+  const scenario = useMemo(
+    () => normaliseScenario(raw, base?.body ?? null, base?.result ?? null, info?.feature_info ?? null),
+    [raw, base, info],
   );
-  const bodyKey = body ? JSON.stringify(body) : null;
+  // What was dropped or clamped stays so (it must not come back with a later patient run).
+  useEffect(() => {
+    if (scenario !== raw) dispatch({ type: "load", scenario });
+  }, [scenario, raw]);
 
-  const reqId = useRef(0);
+  const req = useMemo(() => scenarioRequest(base, scenario), [base, scenario]);
+  const [dragging, setDragging] = useState(false);
+  const [reply, setReply] = useState<ScenarioReply | null>(null);
+  const [error, setError] = useState<ScenarioError | null>(null);
+
+  const baseRef = useRef(base);
+  baseRef.current = base;
   const ctrl = useRef<AbortController | null>(null);
-  const baseRef = useRef(baseResult);
-  baseRef.current = baseResult;
 
-  const send = useCallback(async (kind: "predict" | "explain", b: Payload, k: string) => {
-    ctrl.current?.abort(); // never more than one scenario request in flight
+  const queue = useMemo(() => singleFlight<Job>((job, done) => {
     const c = new AbortController();
     ctrl.current = c;
-    const id = ++reqId.current;
-    try {
-      if (kind === "explain") {
-        const data = await explain(b, c.signal);
-        if (id !== reqId.current) return;
-        setRes({ key: k, data, explained: true });
-      } else {
-        const p = await predict(b, c.signal);
-        if (id !== reqId.current) return;
-        setRes((prev) => {
-          const under = prev?.data ?? baseRef.current;
-          return under ? { key: k, data: { ...under, ...p }, explained: false } : prev;
-        });
-      }
-      setError(null);
-    } catch (e) {
-      if (id !== reqId.current || c.signal.aborted) return;
-      setError(e instanceof ApiError ? e.message : "Could not run the scenario.");
+    setError((e) => (e?.key === job.key ? null : e));
+    const meta = { key: job.key, baseKey: job.baseKey, scenario: job.scenario };
+    const ok = (next: (prev: ScenarioReply | null) => ScenarioReply | null) => {
+      if (c.signal.aborted) return;
+      setReply(next);
+      done();
+    };
+    const fail = (e: unknown) => {
+      if (c.signal.aborted) return;
+      setError({ key: job.key, kind: job.kind, message: e instanceof ApiError ? e.message : "Could not run the scenario." });
+      done();
+    };
+    if (job.kind === "explain") {
+      explain(job.body, c.signal).then((data) => ok(() => ({ ...meta, data, explained: true })), fail);
+    } else {
+      predict(job.body, c.signal).then((p) => ok((prev) => {
+        // Fresh probabilities over the last explanations on this patient run.
+        const b = baseRef.current;
+        const under = prev?.baseKey === job.baseKey ? prev.data : b?.key === job.baseKey ? b.result : null;
+        return under ? { ...meta, data: { ...under, ...p }, explained: false } : prev;
+      }), fail);
     }
-  }, []);
+  }), []);
 
-  const throttled = useMemo(() => throttle((b: Payload, k: string) => send("predict", b, k), DRAG_THROTTLE_MS), [send]);
-  useEffect(() => () => throttled.cancel(), [throttled]);
-
-  // Inactive (or reset): drop everything in flight and show the patient's own result.
-  useEffect(() => {
-    if (active) return;
-    throttled.cancel();
+  const cancel = useCallback(() => {
     ctrl.current?.abort();
-    reqId.current++;
-    setRes(null);
+    ctrl.current = null;
+    queue.clear();
+  }, [queue]);
+
+  const throttled = useMemo(() => throttle((job: Job) => queue.submit(job), DRAG_THROTTLE_MS), [queue]);
+  useEffect(() => () => {
+    throttled.cancel();
+    cancel();
+  }, [throttled, cancel]);
+
+  // A new patient run, or the scenario switched off: replies and errors on the old run no longer apply.
+  const baseKey = base?.key ?? null;
+  const on = req !== null;
+  useEffect(() => {
+    throttled.cancel();
+    cancel();
+    setReply(null);
     setError(null);
-  }, [active, throttled]);
+  }, [baseKey, on, throttled, cancel]);
 
   // Dragging: fast estimates.
   useEffect(() => {
-    if (dragging && body && bodyKey) throttled.call(body, bodyKey);
-  }, [dragging, bodyKey]);
+    if (dragging && req) throttled.call({ kind: "predict", ...req, scenario });
+  }, [dragging, req?.key]);
 
-  // Settled: one full explanation.
-  const settled = res !== null && res.key === bodyKey && res.explained;
+  // Settled: one full explanation (not retried by itself after a failure; see retry).
+  const settled = !!req && reply?.key === req.key && reply.baseKey === req.baseKey && reply.explained;
+  const failed = !!req && error?.key === req.key && error.kind === "explain";
   useEffect(() => {
-    if (dragging || !body || !bodyKey || settled) return;
+    if (dragging || !req || settled || failed) return;
     throttled.cancel();
-    const t = setTimeout(() => send("explain", body, bodyKey), EXPLAIN_DELAY_MS);
+    const job: Job = { kind: "explain", ...req, scenario };
+    const t = setTimeout(() => queue.submit(job), EXPLAIN_DELAY_MS);
     return () => clearTimeout(t);
-  }, [dragging, bodyKey, settled]);
+  }, [dragging, req?.key, req?.baseKey, settled, failed]);
 
-  // A drag ends on pointer release anywhere on the page.
+  // A drag ends on pointer release anywhere on the page (or when the window loses focus).
   const beginDrag = useCallback(() => {
     setDragging(true);
     const end = () => {
       setDragging(false);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", end);
     };
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", end);
   }, []);
 
+  const retry = useCallback(() => setError(null), []);
+  const view = scenarioView(req, reply, error, base?.result ?? null);
+
   return {
+    /** The scenario as it applies to this patient (dropped parts removed, levers clamped). */
     scenario,
     dispatch,
-    active,
-    /** The scenario's result (null when inactive or before its first reply). */
-    result: active ? res?.data ?? null : null,
-    /** A newer scenario is being calculated, or the explanations lag the probabilities. */
-    updating: active && !settled,
-    explanationsLag: active && res !== null && !res.explained,
-    error: active ? error : null,
+    /** A scenario changes the patient's submitted values. */
+    on,
+    view,
+    error: view.status === "error" ? error?.message ?? null : null,
+    dragging,
     beginDrag,
+    retry,
   };
 }

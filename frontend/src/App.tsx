@@ -6,8 +6,9 @@ import ExplanationPanel from "./components/ExplanationPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
 import WhatIfPanel from "./components/WhatIfPanel";
 import CohortPanel from "./cohort/CohortPanel";
+import ScenarioStrip from "./whatif/ScenarioStrip";
 import { useScenario } from "./whatif/useScenario";
-import { scenarioFromQuery } from "./whatif/scenario";
+import { describeScenario, scenarioFromQuery, type Payload, type Scenario, type ScenarioBase } from "./whatif/scenario";
 import {
   ApiError, explain, getFeatures, getHealth, getMetrics,
   type ExplainResponse, type FeaturesResponse, type MetricsResponse,
@@ -33,6 +34,8 @@ export default function App() {
 
   const [result, setResult] = useState<ExplainResponse | null>(null);
   const [resultKey, setResultKey] = useState<string | null>(null);
+  // The request body behind `result`: what-if scenarios build on exactly these values, never on unsubmitted edits.
+  const [resultBody, setResultBody] = useState<Payload | null>(null);
   const [resultSource, setResultSource] = useState<Source | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -52,12 +55,25 @@ export default function App() {
   const valid = Object.keys(clientErrors).length === 0;
   const stale = result !== null && resultKey !== key;
 
-  // What-if: a scenario on top of the form (the form itself is never edited). Deep link: ?whatif=1&bp=...
+  // What-if: a scenario on top of the submitted values (the form itself is never edited).
+  // Deep link: ?whatif=1&bp=120&fbs=100&tg=150&quit=1&contrast=angina,st,rwma,ef
   const [deepScenario] = useState(() => scenarioFromQuery(window.location.search));
   const [whatIfOpen, setWhatIfOpen] = useState(deepScenario.open);
-  const sc = useScenario(payload, result, deepScenario.scenario);
-  // What every view shows: the scenario while it is active (keeping the patient's result until its first reply).
-  const shown = sc.active && sc.result ? sc.result : result;
+  const base = useMemo<ScenarioBase | null>(
+    () => (result && resultBody && resultKey ? { body: resultBody, key: resultKey, result } : null),
+    [result, resultBody, resultKey],
+  );
+  const sc = useScenario(base, info, deepScenario.scenario);
+  const { view } = sc;
+  // What every view shows: the scenario's reply for these values, else the patient's own result (never labelled
+  // what-if: before the first reply or after a failure the notices say the numbers are the recorded patient's).
+  const shown = view.reply ? view.shown : result;
+  const showingScenario = view.reply !== null;
+  const resetScenario = () => sc.dispatch({ type: "reset" });
+  const describe = (s: Scenario) => (base ? describeScenario(s, base.body, base.result) : []);
+  // What the views show: the reply's scenario (mid-drag it can trail the sliders by one reply), else the one
+  // being calculated.
+  const shownSummary = view.reply ? describe(view.reply.scenario) : sc.on ? describe(sc.scenario) : [];
 
   // Similar patients (twin cohort). Deep link: ?cohort=1 opens the card and scrolls to it.
   const [deepCohort] = useState(() => new URLSearchParams(window.location.search).get("cohort") === "1");
@@ -83,7 +99,7 @@ export default function App() {
     checkApi();
   }, [checkApi]);
 
-  const run = useCallback(async (body: Record<string, unknown>, bodyKey: string, src: Source) => {
+  const run = useCallback(async (body: Payload, bodyKey: string, src: Source) => {
     controller.current?.abort();
     const ctrl = new AbortController();
     controller.current = ctrl;
@@ -94,6 +110,7 @@ export default function App() {
       if (id !== requestId.current) return; // a newer request superseded this one
       setResult(res);
       setResultKey(bodyKey);
+      setResultBody(body);
       setResultSource(src);
       setError(null);
       setServerFieldErrors({});
@@ -185,21 +202,37 @@ export default function App() {
           />
         </section>
 
-        <section aria-label="3D heart" className={`relative order-2 h-[55vh] min-h-0 rounded bg-slate-800 lg:h-auto ${sc.active ? "ring-2 ring-sky-500" : ""}`}>
-          <ErrorBoundary fallback={<HeartFallback result={result} />}>
-            <HeartScene
-              // Keep the last estimate while inputs change (colours glide to the new one; no grey flash).
-              probs={shown ? shown.vessel_probabilities : null}
-              pending={stale}
-              result={shown}
-              metrics={metrics}
-              highlight={highlight}
-              selected={selected}
-              onSelect={setSelected}
-              bpm={bpm}
+        <section
+          aria-label="3D heart"
+          className={`relative order-2 flex h-[55vh] min-h-0 flex-col rounded bg-slate-800 lg:h-auto ${showingScenario ? "ring-2 ring-sky-500" : ""}`}
+        >
+          {/* In the section's flow, above the scene: never over the toolbar, inspector, captions or ECG. */}
+          {view.status !== "off" && (
+            <ScenarioStrip
+              status={view.status}
+              summary={shownSummary}
+              error={sc.error}
+              base={result}
+              shown={shown}
+              onReset={resetScenario}
+              onRetry={sc.retry}
             />
-          </ErrorBoundary>
-          {sc.active && <ScenarioBadge updating={sc.updating} onReset={() => sc.dispatch({ type: "reset" })} />}
+          )}
+          <div className="relative min-h-0 flex-1">
+            <ErrorBoundary fallback={<HeartFallback result={shown} />}>
+              <HeartScene
+                // Keep the last estimate while inputs change (colours glide to the new one; no grey flash).
+                probs={shown ? shown.vessel_probabilities : null}
+                pending={stale}
+                result={shown}
+                metrics={metrics}
+                highlight={highlight}
+                selected={selected}
+                onSelect={setSelected}
+                bpm={bpm}
+              />
+            </ErrorBoundary>
+          </div>
         </section>
 
         <section aria-label="Results" className="order-1 space-y-4 overflow-auto lg:order-3">
@@ -229,8 +262,15 @@ export default function App() {
                   onSelect={setSelected}
                   onHover={setHighlight}
                   // Angiography comparisons belong to the recorded patient, not to a scenario.
-                  preset={sc.active ? null : shownPreset}
-                  scenario={sc.active}
+                  preset={sc.on ? null : shownPreset}
+                  scenario={view.status === "off" ? null : {
+                    status: view.status,
+                    summary: shownSummary.join(", "),
+                    error: sc.error,
+                    onReset: resetScenario,
+                    onRetry: sc.retry,
+                  }}
+                  announce={!sc.on}
                 />
               </div>
               <CohortPanel
@@ -238,7 +278,7 @@ export default function App() {
                 onToggle={() => setCohortOpen((o) => !o)}
                 // Real patients are compared with the recorded values, never with a what-if scenario.
                 result={result}
-                scenario={sc.active}
+                scenario={sc.on}
                 scrollOnOpen={deepCohort}
               />
               <WhatIfPanel
@@ -246,20 +286,27 @@ export default function App() {
                 onToggle={() => setWhatIfOpen((o) => !o)}
                 scenario={sc.scenario}
                 dispatch={sc.dispatch}
-                active={sc.active}
-                payload={payload}
-                base={result}
-                scenarioResult={sc.result}
-                info={info}
-                updating={sc.updating}
+                on={sc.on}
+                payload={base?.body ?? null}
+                base={base?.result ?? null}
+                view={view}
                 error={sc.error}
+                info={info}
                 onDragStart={sc.beginDrag}
+                onRetry={sc.retry}
               />
               <div className="rounded bg-slate-800 p-4">
                 <h2 className="mb-3 text-sm font-semibold text-gray-200">
-                  Why this estimate?{sc.active && <span className="ml-2 text-[11px] font-normal text-sky-300">what-if scenario</span>}
+                  Why this estimate?
+                  {showingScenario && <span className="ml-2 rounded bg-sky-900 px-1.5 py-0.5 text-[11px] font-semibold text-sky-200">What-if</span>}
                 </h2>
-                <div className={`transition-opacity ${sc.explanationsLag ? "opacity-60" : ""}`}>
+                {showingScenario && (
+                  <div role="note" className="mb-3 rounded border border-sky-800 bg-sky-950/40 px-2 py-1.5 text-[11px] text-sky-200">
+                    Drivers and numbers below are for the hypothetical inputs ({shownSummary.join(", ")}), not this
+                    patient&apos;s recorded values{view.explanationsLag ? "; the drivers catch up when the slider is released" : ""}.
+                  </div>
+                )}
+                <div className={`transition-opacity ${view.explanationsLag ? "opacity-60" : ""}`}>
                   <ExplanationPanel result={shown} metrics={metrics} info={info} selected={selected} onSelect={setSelected} />
                 </div>
               </div>
@@ -267,19 +314,6 @@ export default function App() {
           </ErrorBoundary>
         </section>
       </main>
-    </div>
-  );
-}
-
-/** Over the 3D view while a what-if scenario is shown (rendered by App, outside the 3D scene). */
-function ScenarioBadge({ updating, onReset }: { updating: boolean; onReset: () => void }) {
-  return (
-    <div role="status" className="absolute right-3 top-12 z-20 flex items-center gap-2 rounded border border-sky-500 bg-sky-950/90 px-2 py-1 text-[11px] text-sky-100 shadow">
-      <span className={`h-2 w-2 rounded-full bg-sky-400 ${updating ? "animate-pulse" : ""}`} />
-      <span>
-        <b>Scenario active</b>: what-if inputs, not the recorded values
-      </span>
-      <button onClick={onReset} className="rounded bg-sky-600 px-1.5 py-0.5 font-semibold text-white hover:bg-sky-500">Reset to patient</button>
     </div>
   );
 }

@@ -14,11 +14,26 @@ interface Props {
   /** Hovering the bullseye highlights that artery in the 3D view. */
   onHover?: (v: Vessel | null) => void;
   preset: Preset | null;
-  /** The result is a what-if scenario, not the patient's recorded values. */
-  scenario?: boolean;
+  /** A what-if scenario is on: the notice says exactly what the numbers below are. */
+  scenario?: ScenarioNote | null;
+  /** Announce changes to screen readers (off while a scenario is on: its strip announces settled results). */
+  announce?: boolean;
 }
 
-export default function ClinicalDashboard({ result, metrics, selected, onSelect, onHover = () => {}, preset, scenario = false }: Props) {
+/** What the dashboard shows while a what-if scenario is on. */
+export interface ScenarioNote {
+  /** "calculating" and "error": the numbers are still the patient's recorded estimate. */
+  status: "calculating" | "ready" | "updating" | "error";
+  /** What the scenario on screen changes, e.g. "wall-motion grade 0 → 2 (hypothetical)". */
+  summary: string;
+  error?: string | null;
+  onReset: () => void;
+  onRetry: () => void;
+}
+
+export default function ClinicalDashboard({
+  result, metrics, selected, onSelect, onHover = () => {}, preset, scenario = null, announce = true,
+}: Props) {
   if (!result) {
     return (
       <div className="text-sm text-gray-400">
@@ -33,13 +48,8 @@ export default function ClinicalDashboard({ result, metrics, selected, onSelect,
   const discordant = (cad.probability < cad.threshold && maxVessel >= 0.5) || (cad.probability > 0.9 && maxVessel < 0.2);
 
   return (
-    <div className="space-y-3" aria-live="polite">
-      {scenario && (
-        <Notice tone="sky">
-          <b>What-if scenario.</b> Estimates for changed model inputs, not this patient's recorded values. Reset in the
-          what-if card below.
-        </Notice>
-      )}
+    <div className="space-y-3" aria-live={announce ? "polite" : "off"}>
+      {scenario && <ScenarioNotice note={scenario} />}
       <div>
         <div className="text-sm text-gray-300">Probability of coronary artery disease</div>
         <div className="flex items-baseline gap-3">
@@ -162,6 +172,29 @@ function GroundTruth({ target, preset, threshold, compact }: {
     <div className="mt-1 text-[11px] text-gray-400">
       Angiography: <b className="text-gray-200">{truthText}</b> · held-out estimate {formatPct(heldOut)}{" "}
       <span className={badge.cls}>({badge.text})</span>
+    </div>
+  );
+}
+
+function ScenarioNotice({ note }: { note: ScenarioNote }) {
+  const failed = note.status === "error";
+  const btn = "rounded px-1.5 py-0.5 font-semibold text-white";
+  return (
+    <div role="note" className={`rounded border px-2 py-1.5 text-[11px] ${failed ? "border-red-800 bg-red-950/40 text-red-200" : "border-sky-800 bg-sky-950/40 text-sky-200"}`}>
+      {failed ? (
+        <><b>What-if scenario failed.</b> {note.error} The numbers below are this patient&apos;s recorded estimate.</>
+      ) : note.status === "calculating" ? (
+        <><b>Calculating the what-if</b> ({note.summary}). The numbers below are still this patient&apos;s recorded estimate.</>
+      ) : (
+        <>
+          <b>What-if: {note.summary}.</b> Model sensitivity, not treatment effect: estimates for hypothetical inputs, not
+          this patient&apos;s recorded values.
+        </>
+      )}
+      <span className="ml-1 inline-flex gap-1 align-middle">
+        {failed && <button onClick={note.onRetry} className={`${btn} bg-red-700 hover:bg-red-600`}>Retry</button>}
+        <button onClick={note.onReset} className={`${btn} bg-sky-700 hover:bg-sky-600`}>Reset to patient</button>
+      </span>
     </div>
   );
 }
