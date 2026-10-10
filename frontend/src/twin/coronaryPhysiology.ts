@@ -11,9 +11,10 @@
  *    so a normal artery has a flow reserve of CFR_N; venous pressure Pv = 0 (Pijls et al., Circulation
  *    1993;87:1354), which makes hyperaemic Pd/Pa exactly the maximal-flow fraction.
  *  - Autoregulation: the microvessels deliver whatever the territory demands until they reach Rmin, so
- *    flow = min(demand, Qmax). Resting flow therefore stays flat until about 85% narrowing while maximal
- *    flow starts to fall at about 50% (Gould, Lipscomb, Hamilton, Am J Cardiol 1974;33:87; Uren et al.,
- *    N Engl J Med 1994;330:1782).
+ *    flow = min(demand, Qmax). Resting flow therefore stays flat until about 85% narrowing at the reference
+ *    resting demand (a higher resting pulse × pressure brings that point lower), while maximal flow starts to
+ *    fall at about 50% (Gould, Lipscomb, Hamilton, Am J Cardiol 1974;33:87; Uren et al., N Engl J Med
+ *    1994;330:1782).
  *  - Demand follows the rate-pressure product (Gobel et al., Circulation 1978;57:549): exercise raises
  *    heart rate to 85% of the age-predicted maximum (ACC/AHA 2002 exercise-testing guideline) and systolic
  *    pressure by 50 mmHg, capped at 210 (Fletcher et al., Circulation 2013;128:873).

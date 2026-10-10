@@ -3,18 +3,23 @@
  * progress dots with the current step's progress, Exit), the caption that heads the notices column, and the
  * closing honesty card.
  */
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type Ref } from "react";
 import type { MetricsResponse } from "../api/client";
-import { HONESTY, STORY_STEPS, honestyAucs } from "./storySteps";
+import { HONESTY, STORY_STEPS, honestyAucs, honestySpoken } from "./storySteps";
 
 interface BarProps {
   step: number;
+  /** The story plays (the user's choice; it may still be waiting for a heart to load). */
   playing: boolean;
+  /** Playing, but waiting for a heart to be built: the clock has not started. */
+  waiting: boolean;
   /** Restarts the progress line (a new run of a step). */
   run: number;
   /** The step was opened at its end (its progress line starts full). */
   atEnd: boolean;
   compact: boolean;
+  /** The current step's progress line: the story clock scales it as the step plays. */
+  progressRef: Ref<HTMLSpanElement>;
   onPlay: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -22,12 +27,15 @@ interface BarProps {
   onExit: () => void;
 }
 
-const BTN = "rounded bg-slate-900/80 px-2 py-1 text-gray-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
+const BTN = "min-w-[24px] rounded bg-slate-900/80 px-2 py-1 text-gray-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40";
 
-/** Story controls, in the toolbar's place while the story runs. */
-export function StoryBar({ step, playing, run, atEnd, compact, onPlay, onPrev, onNext, onGoto, onExit }: BarProps) {
+/** Story controls, in the toolbar's place while the story runs (keyboard focus starts on play/pause). */
+export function StoryBar({ step, playing, waiting, run, atEnd, compact, progressRef, onPlay, onPrev, onNext, onGoto, onExit }: BarProps) {
   const s = STORY_STEPS[step];
   const last = STORY_STEPS.length - 1;
+  const play = useRef<HTMLButtonElement>(null);
+  useEffect(() => play.current?.focus({ preventScroll: true }), []);
+  const playLabel = !playing ? "Play" : waiting ? "Pause (waiting for the heart to load)" : "Pause";
   return (
     <div role="toolbar" aria-label="Story controls" className="flex flex-wrap items-center gap-1">
       {/* Narrow views: "Story 3/6 title" on one line, the controls on the next. */}
@@ -46,13 +54,13 @@ export function StoryBar({ step, playing, run, atEnd, compact, onPlay, onPrev, o
         <button onClick={onPrev} disabled={step === 0} aria-label="Previous step" title="Previous step (←)" className={BTN}>
           ‹
         </button>
-        <button onClick={onPlay} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause" : "Play"} className={`${BTN} w-8 text-center`}>
-          {playing ? "❚❚" : "▶"}
+        <button ref={play} onClick={onPlay} aria-label={playLabel} title={playLabel} className={`${BTN} w-8 text-center`}>
+          <span className={waiting ? "animate-pulse" : undefined}>{playing ? "❚❚" : "▶"}</span>
         </button>
         <button onClick={onNext} disabled={step === last} aria-label="Next step" title="Next step (→)" className={BTN}>
           ›
         </button>
-        <div role="group" aria-label="Story steps" className="flex items-center gap-1 rounded bg-slate-900/80 px-1.5 py-1">
+        <div role="group" aria-label="Story steps" className="flex items-center rounded bg-slate-900/80 px-1">
           {STORY_STEPS.map((x, i) => (
             <button
               key={x.id}
@@ -60,9 +68,22 @@ export function StoryBar({ step, playing, run, atEnd, compact, onPlay, onPrev, o
               aria-label={`Step ${i + 1}: ${x.title}`}
               aria-current={i === step ? "step" : undefined}
               title={`${i + 1}. ${x.title}`}
-              className={`relative h-2.5 overflow-hidden rounded-full transition-[width] ${i === step ? "w-6 bg-slate-600" : i < step ? "w-2.5 bg-fuchsia-400" : "w-2.5 bg-slate-600 hover:bg-slate-400"}`}
+              className="group flex h-6 items-center px-[3px]"
             >
-              {i === step && <StepProgress key={run} seconds={x.seconds} playing={playing} full={atEnd} />}
+              <span
+                className={`relative block h-2.5 overflow-hidden rounded-full transition-[width] ${
+                  i === step ? "w-6 bg-slate-600" : i < step ? "w-2.5 bg-fuchsia-400" : "w-2.5 bg-slate-600 group-hover:bg-slate-400"}`}
+              >
+                {i === step && (
+                  <span
+                    key={run}
+                    ref={progressRef}
+                    aria-hidden
+                    className="absolute inset-0 origin-left rounded-full bg-fuchsia-400"
+                    style={{ transform: `scaleX(${atEnd ? 1 : 0})` }}
+                  />
+                )}
+              </span>
             </button>
           ))}
         </div>
@@ -77,26 +98,6 @@ export function StoryBar({ step, playing, run, atEnd, compact, onPlay, onPrev, o
       </div>
     </div>
   );
-}
-
-/** The current step's progress, filling its dot (paused with the story; no React updates per frame). */
-function StepProgress({ seconds, playing, full }: { seconds: number; playing: boolean; full: boolean }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const anim = useRef<Animation | null>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof el.animate !== "function") return;
-    anim.current = el.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], { duration: seconds * 1000, fill: "forwards" });
-    if (full) anim.current.finish();
-    return () => anim.current?.cancel();
-  }, [seconds, full]);
-  useEffect(() => {
-    const a = anim.current;
-    if (!a || a.playState === "finished") return;
-    if (playing) a.play();
-    else a.pause();
-  }, [playing]);
-  return <span ref={ref} aria-hidden className="absolute inset-0 origin-left rounded-full bg-fuchsia-400" style={{ transform: full ? "scaleX(1)" : "scaleX(0)" }} />;
 }
 
 /**
@@ -134,7 +135,10 @@ export function StoryCaption({ text, compact }: { text: string; compact: boolean
   );
 }
 
-/** The closing card: what the 3D view, the models and their numbers are, and are not. */
+/**
+ * The closing card: what the 3D view, the models and their numbers are, and are not. Its buttons stay in view
+ * (the text scrolls above them when space is short); screen readers hear the whole card once.
+ */
 export function StoryCard({ metrics, ended, onReplay, onExit, style }: {
   metrics: MetricsResponse | null;
   /** The story has played to its end (offer a replay). */
@@ -144,35 +148,42 @@ export function StoryCard({ metrics, ended, onReplay, onExit, style }: {
   style?: CSSProperties;
 }) {
   const rows = honestyAucs(metrics);
+  const [spoken, setSpoken] = useState("");
+  useEffect(() => {
+    const id = window.setTimeout(() => setSpoken(honestySpoken(metrics)), 600);
+    return () => window.clearTimeout(id);
+  }, [metrics]);
   return (
     <section
       aria-label="What this is, and is not"
-      className="pointer-events-auto absolute left-1/2 z-20 w-[min(460px,calc(100%-1.5rem))] -translate-x-1/2 overflow-y-auto rounded border border-fuchsia-700/70 bg-slate-950 p-3 text-[11px] leading-snug text-gray-200 shadow-xl"
+      className="pointer-events-auto absolute left-1/2 z-20 flex w-[min(460px,calc(100%-1.5rem))] -translate-x-1/2 flex-col rounded border border-fuchsia-700/70 bg-slate-950 text-[11px] leading-snug text-gray-200 shadow-xl"
       style={style}
     >
-      <h3 className="mb-1.5 text-sm font-semibold text-white">What this is, and is not</h3>
-      <ul className="list-disc space-y-1 pl-4">
-        <li>{HONESTY.anatomy}</li>
-        <li>{HONESTY.cohort}</li>
-        <li>
-          How well each model separates patients with and without the narrowing, in cross-validation (ROC AUC, with its
-          bootstrap 95% CI):
-          <table className="mt-1 w-full max-w-[300px] text-left">
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.target}>
-                  <th scope="row" className="py-px pr-2 font-semibold text-gray-100">{r.label}</th>
-                  <td className="py-px pr-2 tabular-nums text-white">{r.auc === null ? "see Model verification" : r.auc.toFixed(2)}</td>
-                  <td className="py-px tabular-nums text-gray-400">{r.ci[0].toFixed(2)}–{r.ci[1].toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </li>
-        <li>{HONESTY.caveats}</li>
-        <li className="font-semibold text-amber-200">{HONESTY.use}</li>
-      </ul>
-      <div className="mt-2 flex justify-end gap-1.5 text-xs">
+      <div className="min-h-0 overflow-y-auto px-3 pt-2.5">
+        <h3 className="text-sm font-semibold text-white">What this is, and is not</h3>
+        <p className="mb-1 font-semibold text-amber-200">{HONESTY.use}</p>
+        <ul className="list-disc space-y-0.5 pl-4">
+          <li>{HONESTY.anatomy}</li>
+          <li>{HONESTY.cohort}</li>
+          <li>
+            How well each model separates patients with and without the narrowing, in cross-validation (ROC AUC, with its
+            bootstrap 95% CI):
+            <table className="mt-0.5 w-full max-w-[300px] text-left">
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.target}>
+                    <th scope="row" className="py-px pr-2 font-semibold text-gray-100">{r.label}</th>
+                    <td className="py-px pr-2 tabular-nums text-white">{r.auc === null ? "see Model verification" : r.auc.toFixed(2)}</td>
+                    <td className="py-px tabular-nums text-gray-400">{r.ci[0].toFixed(2)}–{r.ci[1].toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </li>
+          <li>{HONESTY.caveats}</li>
+        </ul>
+      </div>
+      <div className="flex shrink-0 justify-end gap-1.5 px-3 pb-2.5 pt-2 text-xs">
         {ended && (
           <button onClick={onReplay} className="rounded bg-slate-800 px-2 py-1 text-gray-200 hover:bg-slate-700">
             Replay
@@ -182,6 +193,7 @@ export function StoryCard({ metrics, ended, onReplay, onExit, style }: {
           Exit story
         </button>
       </div>
+      <span role="status" aria-live="polite" className="sr-only">{spoken}</span>
     </section>
   );
 }

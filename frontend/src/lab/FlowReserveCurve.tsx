@@ -37,6 +37,10 @@ export default function FlowReserveCurve({ vessel, patient, narrowing, demand, o
     ? `M${x(short[0].narrowing)},${y(demandY)}` + short.map((c) => `L${x(c.narrowing).toFixed(1)},${y(c.max).toFixed(1)}`).join("") +
       `L${x(short[short.length - 1].narrowing)},${y(demandY)}Z`
     : "";
+  // Where maximal flow first falls below 95% of normal, and where resting flow first falls short (this heart's).
+  const maxOnset = curve.find((c) => c.max < 0.95 * curve[0].max)?.narrowing ?? null;
+  const restOnset = curve.find((c) => c.rest < 0.995)?.narrowing ?? null;
+  const pc = (n: number) => `${Math.round(n * 100)}%`;
   const at = (n: number) => curve[Math.round((n / MAX_NARROWING) * (curve.length - 1))];
   const cur = at(narrowing);
   const read = hover === null ? null : at(hover);
@@ -58,7 +62,14 @@ export default function FlowReserveCurve({ vessel, patient, narrowing, demand, o
         viewBox={`0 0 ${W} ${H}`}
         className="w-full cursor-crosshair select-none"
         role="img"
-        aria-label={`Resting and maximal coronary flow against narrowing for this artery. Maximal flow starts to fall at about 50% narrowing; resting flow holds until about 85%. Current narrowing ${Math.round(narrowing * 100)}%: maximal flow ${cur.max.toFixed(2)} and resting flow ${cur.rest.toFixed(2)} times this heart's normal resting flow.`}
+        aria-label={
+          "Resting and maximal coronary flow against narrowing for this artery. " +
+          (maxOnset === null ? "" : `Maximal flow starts to fall at about ${pc(maxOnset)} narrowing; `) +
+          (restOnset === null
+            ? "resting flow holds over the whole range. "
+            : `at this heart's resting pulse × pressure, resting flow falls short from about ${pc(restOnset)}. `) +
+          `Current narrowing ${pc(narrowing)}: maximal flow ${cur.max.toFixed(2)} and resting flow ${cur.rest.toFixed(2)} times this heart's normal resting flow.`
+        }
         onPointerMove={(e) => setHover(fromPointer(e))}
         onPointerLeave={() => setHover(null)}
         onClick={(e) => onPick?.(Math.round(fromPointer(e) * 100) / 100)}

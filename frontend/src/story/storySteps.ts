@@ -90,8 +90,11 @@ export interface StoryContext {
   twin: TwinParams;
   /** A what-if scenario colours the arteries. */
   whatIf: boolean;
-  /** The estimates on screen are newer than the streams, or the inputs changed since. */
-  stale: boolean;
+  /**
+   * Why what is shown may not match the form: the inputs changed since this estimate ("previous estimate"), or
+   * the streams trail newer probabilities during a what-if drag ("updating").
+   */
+  stale: "previous estimate" | "updating" | null;
   top: Vessel | null;
   lab: LabState | null;
   /** Seconds into the step (the lab step's caption follows its demonstration). */
@@ -100,54 +103,100 @@ export interface StoryContext {
 
 const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] ?? "");
 
-/** The caption under the story bar for a step (the closing step has its card instead: empty). */
+/** The legend's names for the bands (the middle one is the "undecided" band). */
+const BAND_WORD: Record<Band, string> = { Lower: "lower", Intermediate: "undecided", Higher: "higher" };
+const COUNT = ["none", "one", "two", "three", "four", "five", "six"];
+
+/**
+ * Why the story shows `top`: alone in the highest band, or the highest chance among arteries that share its band
+ * (or, when they also read the same, just that).
+ */
+function whyShown(r: ExplainResponse, top: Vessel): string {
+  const band = (v: Vessel) => vesselBand(r.results[v].probability);
+  const pct = (v: Vessel) => formatPct(r.results[v].probability);
+  const group = [top, ...VESSEL_IDS.filter((v) => v !== top && band(v) === band(top))];
+  if (group.length === 1) return "highest band";
+  const who = group.length === VESSEL_IDS.length ? `all ${COUNT[group.length] ?? group.length}` : `the ${list(group.map((v) => VESSEL[v].label))}`;
+  const where = `in the ${BAND_WORD[band(top)]} band`;
+  return group.every((v) => pct(v) === pct(top)) ? `${who} read ${pct(top)} ${where}` : `highest chance; ${who} are ${where}`;
+}
+
+/**
+ * The caption under the story bar for a step (the closing step has its card instead: empty). Each starts with its
+ * honesty qualifier, so it stays visible when a narrow view shows only the first lines.
+ */
 export function storyCaption(id: StoryStepId, c: StoryContext): string {
   const scenario = c.whatIf ? " (what-if scenario)" : "";
+  const previous = c.stale === "previous estimate" ? " (previous estimate: inputs changed)" : "";
   switch (id) {
     case "chest":
-      return "A reference heart (BodyParts3D anatomical atlas) in the chest, for orientation: not this patient's imaging.";
+      return "A reference heart, not this patient's imaging: the BodyParts3D anatomical atlas in the chest, for orientation.";
     case "twin": {
-      if (!c.result) return "Once an estimate is run, it beats like the patient's heart; until then it shows typical values.";
+      if (!c.result) {
+        return "Illustrative heartbeat and ECG. No estimate yet: once one is run, they follow the patient's recorded values; until then, typical ones.";
+      }
       const tw = c.twin;
       const median = (k: "hr" | "ef" | "bp") => (tw.notRecorded.has(k) ? ", not entered: cohort median" : "");
       const findings = ecgFindings(tw).map((f) => f.text);
       return (
-        `Driven by this patient's recorded pulse (${Math.round(tw.hr)} bpm${median("hr")}), EF (${Math.round(tw.ef)}%, ` +
-        `${efCategory(tw.ef)}${median("ef")}), blood pressure (${Math.round(tw.bp)} mmHg${median("bp")}) and ECG findings ` +
-        `(${findings.length ? list(findings) : "none recorded"}). The ECG trace is illustrative, not the patient's tracing.`
+        `Illustrative ECG, not the patient's tracing${previous}. The heartbeat and trace follow this patient's recorded pulse ` +
+        `(${Math.round(tw.hr)} bpm${median("hr")}), EF (${Math.round(tw.ef)}%, ${efCategory(tw.ef)}${median("ef")}), blood ` +
+        `pressure (${Math.round(tw.bp)} mmHg${median("bp")}) and ECG findings (${findings.length ? list(findings) : "none recorded"}).`
       );
     }
     case "reasoning": {
-      if (!c.result) return "Run an estimate to see what moved it.";
+      if (!c.result) return "Associations, not causes. No estimate yet: once one is run, the streams show what moved it.";
+      const updating = c.stale === "updating" ? " (updating)" : "";
       return (
-        `Overall CAD estimate ${formatPct(c.result.results.cad.probability)}${scenario}: each stream is one data type's evidence ` +
-        "flowing into it (data, not anatomy); width = how much it moved the estimate, red up, blue down. Associations in a " +
-        `referral cohort, not causes.${c.stale ? " Updating." : ""}`
+        `Associations in a referral cohort, not causes. Overall CAD estimate ${formatPct(c.result.results.cad.probability)}` +
+        `${scenario}${previous}${updating}: each stream is one data type's evidence flowing into it (data, not anatomy); ` +
+        "width = how much it moved the estimate, red up, blue down."
       );
     }
     case "arteries": {
-      if (!c.result || !c.top) return "Run an estimate to colour the arteries: one model per artery.";
+      if (!c.result || !c.top) {
+        return "Independent estimates, one model per artery, not a culprit ranking. No estimate yet: once one is run, each artery gets its colour.";
+      }
       const r = c.result;
       const each = VESSEL_IDS.map((v) => `${VESSEL[v].label} ${formatPct(r.results[v].probability)}`).join(", ");
       return (
-        `Chance of ≥50% narrowing, one model per artery${scenario}: ${each}. Shown: the ${VESSEL[c.top].label} (highest band). ` +
-        "The three estimates are independent, not a culprit ranking."
+        `Independent estimates, one per artery, not a culprit ranking${scenario}${previous}: chance of ≥50% narrowing ` +
+        `${each}. Shown: the ${VESSEL[c.top].label} (${whyShown(r, c.top)}).`
       );
     }
     case "lab": {
-      const name = VESSEL[c.lab?.vessel ?? c.top ?? VESSEL_IDS[0]].label;
-      const sandbox = `Teaching sandbox: textbook physiology on a generic ${name} narrowing, not this patient's artery.`;
-      if (!c.lab || c.lab.exercise < 0.02) {
-        return `${sandbox} Up to 85% narrowing, resting flow holds; the most it can carry falls once it passes about 50%.`;
+      const l = c.lab;
+      const name = VESSEL[l?.vessel ?? c.top ?? VESSEL_IDS[0]].label;
+      const sandbox = `Teaching sandbox, not this patient's artery: textbook physiology on a generic ${name} narrowing.`;
+      if (!l) return sandbox;
+      // What the lab panel beside it shows, with its rounding (whole percent).
+      const pc = (x: number) => `${Math.round(x * 100)}%`;
+      const at = `At ${pc(l.narrowing)} narrowing`;
+      const unmet = Math.round(l.ischaemia * 100);
+      if (l.exercise < 0.02) {
+        if (unmet > 0) {
+          return `${sandbox} ${at}, even resting flow falls short at this heart's resting pulse × pressure: ${unmet}% of the territory's need is unmet (blue).`;
+        }
+        const most = l.qmaxFrac < 0.95 ? `is down to ${pc(l.qmaxFrac)} of normal` : "is still about normal";
+        return `${sandbox} ${at}, resting flow still meets the need; the most it can carry ${most} (it falls once the narrowing passes about 50%).`;
       }
+      if (unmet === 0) return `${sandbox} With exercise, demand rises; at ${pc(l.narrowing)} narrowing the artery still carries enough.`;
       return (
-        `${sandbox} With exercise, demand outgrows what the narrowed artery can carry: ${formatPct(c.lab.ischaemia)} of its ` +
-        "territory's need is unmet (blue) and the cascade lights up in order."
+        `${sandbox} With exercise, demand outgrows what the narrowed artery can carry: ${unmet}% of its territory's need is ` +
+        "unmet (blue) and the cascade lights up in order."
       );
     }
     case "honesty":
       return "";
   }
+}
+
+/** The closing card's content in one sentence per item, for screen readers (the card itself is not a live region). */
+export function honestySpoken(metrics: MetricsResponse | null): string {
+  const aucs = honestyAucs(metrics)
+    .map((r) => `${r.label}${r.auc === null ? "" : ` ${r.auc.toFixed(2)}`}, 95% CI ${r.ci[0].toFixed(2)} to ${r.ci[1].toFixed(2)}`)
+    .join("; ");
+  return `What this is, and is not. ${HONESTY.use} ${HONESTY.anatomy} ${HONESTY.cohort} Cross-validated ROC AUC: ${aucs}. ${HONESTY.caveats}`;
 }
 
 export interface HonestyAuc {
@@ -168,7 +217,7 @@ export function honestyAucs(metrics: MetricsResponse | null): HonestyAuc[] {
   }));
 }
 
-/** The closing card's statements (the AUC table sits between the cohort and the caveats). */
+/** The closing card's statements (the use line leads; the AUC table sits between the cohort and the caveats). */
 export const HONESTY = {
   anatomy: "Reference anatomy (BodyParts3D, © DBCLS, CC BY 4.0), not this patient's imaging: findings are model inputs, never places on the heart.",
   cohort: `Trained and validated on a single-centre referral cohort: ${VERIFICATION.rows} patients referred for angiography (${Math.round(VERIFICATION.prevalenceCad * 100)}% had CAD).`,

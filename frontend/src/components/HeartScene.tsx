@@ -351,9 +351,10 @@ export default function HeartScene({
     [overlay],
   );
   const belowNotices = (overlay.notices?.bottom ?? overlay.toolbar) + 6;
-  // The legend shrinks to the band scale while the reasoning view (or a narrow view's vessel card or story caption)
-  // needs the room.
-  const legendCollapsed = reasoning || (narrowCard && !!selected && inspectorOpen) || (compact && story !== null);
+  // The legend shrinks to the band scale while the reasoning view (or a narrow view's vessel card or story caption,
+  // or the story's closing card) needs the room.
+  const legendCollapsed = reasoning || (narrowCard && !!selected && inspectorOpen) ||
+    (story !== null && (compact || STORY_STEPS[story.step].id === "honesty"));
   const stackViews = viewWidth > 0 && viewWidth < 12 + (legendCollapsed ? 208 : 240) + 8 + 78 + 12;
   // Model credit (for the atlas also the reference-anatomy caveat): bottom right, or under the legend when narrow.
   const creditInLegend = compact && !labActive;
@@ -470,7 +471,7 @@ export default function HeartScene({
     setPick(null);
     setLayerMenu(false);
     setMoreMenu(false);
-    setBeating(true);
+    if (!still) setBeating(true); // reduced motion: a paused heartbeat stays paused
     setShowEcg(true);
     setLabCollapsed(false);
     if (id !== "lab") setLabOn(false);
@@ -517,11 +518,11 @@ export default function HeartScene({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story?.run]);
   useEffect(() => {
-    if (!storyFly.current || !ready || !useAtlas) return;
+    if (!storyFly.current || !ready || !useAtlas || !story?.playing) return;
     storyFly.current = false;
     setFly((f) => ({ from: CHEST_DISTANCE, to: fitDistance(viewWidth, viewHeight), n: (f?.n ?? 0) + 1 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, useAtlas, story?.run]);
+  }, [ready, useAtlas, story?.run, story?.playing]);
   // A new estimate (e.g. the first, after a deep link) moves the inspected artery and the lab's narrowing with it.
   useEffect(() => {
     if (!storyTop) return;
@@ -529,9 +530,12 @@ export default function HeartScene({
     if (storyStep?.id === "lab") setLabSettings((st) => (st.vessel === storyTop ? st : { ...st, vessel: storyTop }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storyTop, storyStep?.id]);
-  // The clock (and the step's progress line) waits while a heart is still being built.
+  // The clock (and the step's progress line, which it moves) waits while a heart is still being built.
   const storyPlaying = !!story?.playing && ready;
+  const storyProgress = useRef<HTMLSpanElement>(null);
   const storyClock = useStoryClock(story && { ...story, playing: storyPlaying }, storyStep?.seconds ?? 1, (t) => {
+    const bar = storyProgress.current;
+    if (bar) bar.style.transform = `scaleX(${Math.min(1, t / (storyStep?.seconds ?? 1))})`;
     // The lab step's demonstration: the narrowing grows to 85%, then rest to peak exercise (static if reduced motion).
     if (storyStep?.id !== "lab" || still || story?.atEnd) return;
     const d = labDemo(t);
@@ -563,28 +567,41 @@ export default function HeartScene({
         e.preventDefault();
         storyKeys.current.exit();
       } else if (!typing && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-        storyKeys.current.goto(storyKeys.current.step + (e.key === "ArrowRight" ? 1 : -1));
+        const next = storyKeys.current.step + (e.key === "ArrowRight" ? 1 : -1);
+        if (next >= 0 && next < STORY_STEPS.length) storyKeys.current.goto(next); // not past either end
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [story !== null]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Deep link: once the Atlas heart is known to be available.
+  // Deep link: once the Atlas heart is known to be available and the camera exists (its position is saved, to be
+  // given back on exit).
   useEffect(() => {
     const q = storyQuery.current;
-    if (atlasOk !== true || !q) return;
+    if (atlasOk !== true || !framesReady || !cameraRef.current || !q) return;
     storyQuery.current = null;
     startStory(q.step, { playing: q.playing, atEnd: q.atEnd });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [atlasOk]);
+  }, [atlasOk, framesReady]);
+  // Keyboard focus goes back to the Story button when the story ends (the bar that held it is gone).
+  const storyButtonRef = useRef<HTMLButtonElement>(null);
+  const storyWasOn = useRef(false);
+  useEffect(() => {
+    if (story) storyWasOn.current = true;
+    else if (storyWasOn.current) {
+      storyWasOn.current = false;
+      storyButtonRef.current?.focus({ preventScroll: true });
+    }
+  }, [story !== null]); // eslint-disable-line react-hooks/exhaustive-deps
   const storyText = storyStep
     ? storyCaption(storyStep.id, {
-      result, twin, whatIf, stale: pending || lagging, top: storyTop, lab, t: 0,
+      result, twin, whatIf, stale: pending ? "previous estimate" : lagging ? "updating" : null, top: storyTop, lab, t: 0,
     })
     : "";
   const storyCard = storyStep?.id === "honesty";
   const storyButton = atlasOk && !atlasFailed && (
     <button
+      ref={storyButtonRef}
       onClick={() => startStory()}
       className={`rounded bg-slate-900/80 ${pad} py-1 text-fuchsia-200 hover:bg-slate-700`}
       title="Story: a guided, captioned tour of this patient's result on the Atlas heart, about 90 s (Esc gives your view back)"
@@ -784,10 +801,12 @@ export default function HeartScene({
         <div ref={toolbarRef} className="absolute left-3 right-3 top-3 z-20 text-xs">
           <StoryBar
             step={story.step}
-            playing={storyPlaying}
+            playing={story.playing}
+            waiting={story.playing && !ready}
             run={story.run}
             atEnd={story.atEnd}
             compact={compact}
+            progressRef={storyProgress}
             onPlay={playStory}
             onPrev={() => gotoStory(story.step - 1)}
             onNext={() => gotoStory(story.step + 1)}
@@ -998,7 +1017,7 @@ export default function HeartScene({
       {story && storyCard && (
         <StoryCard
           metrics={metrics}
-          ended={!story.playing}
+          ended={!story.playing && (story.atEnd || storyClock.current >= STORY_STEPS[story.step].seconds)}
           onReplay={() => gotoStory(0, true)}
           onExit={exitStory}
           style={{ top: belowNotices, maxHeight: Math.max(150, viewHeight - belowNotices - overlay.legend - 12) }}
