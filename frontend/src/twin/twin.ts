@@ -24,7 +24,12 @@ export interface TwinParams {
   poorR: boolean;
   bbb: "none" | "LBBB" | "RBBB";
   /** Which of the above were not entered (filled with typical values by the model). */
-  notRecorded: Set<keyof Omit<TwinParams, "notRecorded">>;
+  notRecorded: Set<keyof Omit<TwinParams, "notRecorded" | "lab">>;
+  /**
+   * Set only while the ischaemia lab (a teaching sandbox) drives the twin: hr and bp are then the lab's
+   * exercise values and stMv the lab's illustrative ST depression (mV, 0 = none).
+   */
+  lab?: { stMv: number };
 }
 
 export interface BeatTiming {
@@ -40,7 +45,7 @@ export const DEFAULT_TWIN: TwinParams = {
 };
 
 // Dataset column -> (twin field, API schema key) for reading the model's inputs.
-const SOURCES: [string, keyof Omit<TwinParams, "notRecorded">, string][] = [
+const SOURCES: [string, keyof Omit<TwinParams, "notRecorded" | "lab">, string][] = [
   ["EF-TTE", "ef", "EF_TTE"], ["BP", "bp", "BP"], ["PR", "hr", "PR"],
   ["St Depression", "stDepression", "StDepression"], ["St Elevation", "stElevation", "StElevation"],
   ["Tinversion", "tInversion", "Tinversion"], ["Q Wave", "qWave", "QWave"], ["LVH", "lvh", "LVH"],
@@ -123,15 +128,19 @@ export interface Mechanics {
   aortic: number; // arterial distension amplitude from blood pressure
 }
 
-export function mechanics(t: number, timing: BeatTiming, p: TwinParams): Mechanics {
-  const { pr, qt } = timing;
-  // Atrial systole follows the P wave by about 0.08 s.
-  const atrial = gauss(t, 0.1, 0.035);
-  // Ventricular contraction: electromechanical delay ~0.04 s after QRS onset, relaxation by the end of T.
+/** Ventricular contraction 0..1 at beat time t: electromechanical delay ~0.04 s after QRS onset, relaxation by the end of T. */
+export function ventricularContraction(t: number, { pr, qt }: BeatTiming): number {
   const t0 = pr + 0.04;
   const t1 = pr + qt + 0.02;
   const s = (t - t0) / (t1 - t0);
-  const ventricular = s > 0 && s < 1 ? Math.sin(Math.PI * s) ** 1.4 : 0;
+  return s > 0 && s < 1 ? Math.sin(Math.PI * s) ** 1.4 : 0;
+}
+
+export function mechanics(t: number, timing: BeatTiming, p: TwinParams): Mechanics {
+  const { pr } = timing;
+  // Atrial systole follows the P wave by about 0.08 s.
+  const atrial = gauss(t, 0.1, 0.035);
+  const ventricular = ventricularContraction(t, timing);
   // LBBB: the septum contracts early, the lateral wall late (apical rocking on echo).
   const rock = p.bbb === "LBBB" ? -gauss(t, pr + 0.07, 0.03) + 0.9 * gauss(t, pr + 0.22, 0.06) : 0;
   const ef = Math.max(10, Math.min(75, p.ef || 55));
@@ -157,7 +166,7 @@ export function ecgSample(t: number, timing: BeatTiming, p: TwinParams, lead: Le
   const ts = 0.04 * Math.sqrt(timing.qt / 0.38); // T-wave width
   const g = (c: number, s: number, a: number) => a * gauss(t, c, s);
   // ST segment shift between the J point and the T wave (horizontal).
-  const st = (a: number) => a * smooth(j - 0.004, j + 0.012, t) * (1 - smooth(tc - 0.05, tc + 0.01, t));
+  const st = (a: number, tPeak = tc) => a * smooth(j - 0.004, j + 0.012, t) * (1 - smooth(tPeak - 0.05, tPeak + 0.01, t));
   let v = 0;
 
   if (lead === "II") {
@@ -172,9 +181,15 @@ export function ecgSample(t: number, timing: BeatTiming, p: TwinParams, lead: Le
       v += g(q0 + 0.035 * w, 0.009 * w, (p.lvh ? 1.7 : 1.0) * (p.qWave ? 0.7 : 1)); // R
       v += g(q0 + 0.06 * w, 0.009, -0.2); // S
       if (p.bbb === "RBBB") v += g(q0 + 0.1, 0.02, -0.28); // wide, slurred terminal S
-      const tAmp = p.tInversion ? -0.25 : p.stDepression ? 0.15 : 0.28;
-      v += g(tc, ts, tAmp);
-      if (p.stDepression) v += st(-0.18);
+      // Recorded ST depression (0.18 mV) or the ischaemia lab's (0.1-0.2 mV, while its narrowing causes
+      // ischaemia): the deeper of the two is drawn.
+      const stDepth = Math.max(p.stDepression ? 0.18 : 0, p.lab?.stMv ?? 0);
+      // ST depression is read 60-80 ms after the J point (ACC/AHA 2002): keep that stretch ahead of the T wave
+      // even at exercise rates, as long as the T wave still ends within the beat (no change at resting rates).
+      const tcSt = stDepth > 0 ? Math.max(tc, Math.min(j + 0.08 + ts, timing.rr - 2 * ts - 0.01)) : tc;
+      const tAmp = p.tInversion ? -0.25 : stDepth > 0 ? 0.15 : 0.28;
+      v += g(tcSt, ts, tAmp);
+      if (stDepth > 0) v += st(-stDepth, tcSt);
       if (p.stElevation) v += st(0.2);
     }
   } else {
@@ -199,10 +214,12 @@ function smooth(a: number, b: number, x: number) {
   return k * k * (3 - 2 * k);
 }
 
-/** Recorded ECG findings in words, for the monitor's annotations. */
-export function ecgFindings(p: TwinParams): { text: string; recorded: boolean }[] {
-  const rec = (k: keyof Omit<TwinParams, "notRecorded">) => !p.notRecorded.has(k);
-  const out: { text: string; recorded: boolean }[] = [];
+/** Recorded ECG findings in words, for the monitor's annotations (plus the lab's, marked `lab`). */
+export function ecgFindings(p: TwinParams): { text: string; recorded: boolean; lab?: boolean }[] {
+  const rec = (k: keyof Omit<TwinParams, "notRecorded" | "lab">) => !p.notRecorded.has(k);
+  const out: { text: string; recorded: boolean; lab?: boolean }[] = [];
+  // The lab's ST depression is a whole-heart sign: it does not show where the ischaemia is. Not readable in LBBB.
+  if (p.lab && p.lab.stMv > 0 && p.bbb !== "LBBB") out.push({ text: "ST depression", recorded: false, lab: true });
   if (p.stDepression) out.push({ text: "ST depression", recorded: rec("stDepression") });
   if (p.stElevation) out.push({ text: "ST elevation", recorded: rec("stElevation") });
   if (p.tInversion) out.push({ text: "T-wave inversion", recorded: rec("tInversion") });

@@ -132,18 +132,26 @@ export default function EcgMonitor({ params, timing }: Props) {
   }, []);
 
   const findings = ecgFindings(params);
-  const typical = (k: keyof Omit<TwinParams, "notRecorded">) => params.notRecorded.has(k);
+  // While the ischaemia lab drives the twin, rate and pressure are the lab's exercise values, not recorded ones.
+  const lab = params.lab !== undefined;
+  const typical = (k: keyof Omit<TwinParams, "notRecorded" | "lab">) => !lab && params.notRecorded.has(k);
   return (
     <div className="flex h-full gap-3 border-t border-slate-700 bg-[#05090f] px-3 py-1.5 text-[10px] text-gray-400">
       <div className="relative min-w-0 flex-1">
         <canvas ref={canvasRef} className="h-full w-full" aria-label="Illustrative ECG, leads II and V1" />
-        <div className="pointer-events-none absolute bottom-0 right-1 text-[9px] text-gray-500">
-          Illustrative ECG built from the recorded findings, not the patient&apos;s tracing
+        <div
+          className="absolute bottom-0 right-1 max-w-full truncate text-[9px] text-gray-500"
+          title={lab ? "Illustrative ECG: recorded findings plus the lab's sandbox (marked lab), not the patient's tracing" : "Illustrative ECG built from the recorded findings, not the patient's tracing"}
+        >
+          {lab
+            ? "Illustrative ECG: recorded findings plus the lab's sandbox (marked lab), not the patient's tracing"
+            : "Illustrative ECG built from the recorded findings, not the patient's tracing"}
         </div>
       </div>
       <div className="w-44 shrink-0 space-y-0.5 overflow-hidden leading-tight">
         <div className="text-[11px] font-semibold text-emerald-300">
           ♥ {Math.round(params.hr)} bpm{typical("hr") && <span className="font-normal text-gray-500"> typical</span>}
+          {lab && <LabChip title="Heart rate set by the ischaemia lab's exercise slider" />}
         </div>
         <div>
           <span className="text-gray-200">EF {Math.round(params.ef)}%</span> · {efCategory(params.ef)}
@@ -152,19 +160,39 @@ export default function EcgMonitor({ params, timing }: Props) {
         <div>
           <span className="text-gray-200">BP {Math.round(params.bp)}</span> mmHg
           {typical("bp") && <span className="text-gray-500"> (typical value)</span>}
+          {lab && <LabChip title="Systolic pressure set by the ischaemia lab's exercise slider" />}
         </div>
         <div className="flex flex-wrap gap-0.5 pt-0.5">
           {findings.length === 0 ? (
             <span className="text-gray-500">No recorded ECG abnormality</span>
           ) : (
-            findings.map((f) => (
-              <span key={f.text} className="rounded bg-slate-800 px-1 text-gray-200" title={f.recorded ? "Recorded" : "Not entered: typical value"}>
-                {f.text}
-              </span>
-            ))
+            findings.map((f) =>
+              f.lab ? (
+                <span
+                  key={`lab-${f.text}`}
+                  className="rounded border border-amber-500/70 bg-amber-950/80 px-1 text-amber-100"
+                  title="From the ischaemia lab (teaching sandbox), not this patient's ECG. ST depression does not show where the ischaemia is."
+                >
+                  {f.text} <span className="font-semibold text-amber-300">lab</span>
+                </span>
+              ) : (
+                <span key={f.text} className="rounded bg-slate-800 px-1 text-gray-200" title={f.recorded ? "Recorded" : "Not entered: typical value"}>
+                  {f.text}
+                </span>
+              ),
+            )
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/** Marks a value on the monitor as coming from the ischaemia lab rather than the patient's record. */
+function LabChip({ title }: { title: string }) {
+  return (
+    <span title={title} className="ml-1 rounded border border-amber-500/70 px-0.5 align-[1px] text-[9px] font-semibold text-amber-300">
+      lab
+    </span>
   );
 }

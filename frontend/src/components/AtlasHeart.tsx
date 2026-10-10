@@ -1,4 +1,4 @@
-import type { ThreeEvent } from "@react-three/fiber";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Html, useGLTF } from "@react-three/drei";
 import {
   Suspense, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
@@ -8,12 +8,13 @@ import * as THREE from "three";
 import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
 import { VesselLabel, useVesselMaterial, type ArteryProbs } from "./ArteryTube";
 import {
-  ATLAS_HEART_URL, ATLAS_SCALE, ATLAS_THORAX_URL, prepareAtlasHeart, prepareThorax,
-  type AtlasBranch, type AtlasPart, type PreparedAtlasHeart,
+  ATLAS_HEART_URL, ATLAS_SCALE, ATLAS_THORAX_URL, prepareAtlasHeart, prepareLabAnatomy, prepareThorax,
+  type AtlasBranch, type AtlasLabAnatomy, type AtlasPart, type LabMarker, type PreparedAtlasHeart,
 } from "./atlasAnatomy";
-import { patchMaterial } from "./atlasMaterials";
+import { FLOW_SPACING_MM, LAB, patchMaterial } from "./atlasMaterials";
 import { NEUTRAL_ARTERY, fbm, riskColor } from "./heartAnatomy";
-import type { BeatTiming, TwinParams } from "../twin/twin";
+import { RING_SIZE, TICK, heartClock, readTick, ventricularContraction, type BeatTiming, type TwinParams } from "../twin/twin";
+import { ARTERY_PHYSIOLOGY, LEFT_MAIN_DSVR, phasicMean, type LabState } from "../twin/coronaryPhysiology";
 import { useHeartMotion } from "../twin/useHeartMotion";
 import { UNMODELLED, VESSEL, VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
 import { FlowAnchor } from "../reasoning/anchors";
@@ -36,6 +37,12 @@ export interface AtlasPick {
   branch: AtlasBranch;
 }
 
+/** Ischaemia lab view: the sandbox narrowing on one artery and the physiology it produces. */
+export interface AtlasLab {
+  vessel: Vessel;
+  state: LabState;
+}
+
 interface Props {
   probs: ArteryProbs | null;
   selected: Vessel | null;
@@ -45,6 +52,10 @@ interface Props {
   chest: ChestLayers | null;
   twin: TwinParams;
   timing: BeatTiming;
+  /** Ischaemia lab (teaching sandbox): replaces the risk colours with flow pulses, the marker and the ischaemic territory. */
+  lab?: AtlasLab | null;
+  /** Camera direction per artery from which its sandbox marker is in sight (reported once the lab anatomy exists). */
+  onLabViews?: (views: Record<Vessel, THREE.Vector3>) => void;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
   onPick: (pick: AtlasPick | null) => void;
@@ -52,6 +63,12 @@ interface Props {
 }
 
 const N = VESSEL_IDS.length;
+// Lab: visual pulse speed (mm/s) at the reference demand; it scales with flow (the demand factor).
+const FLOW_SPEED_MM_S = 16;
+const LAB_ARTERY = new THREE.Color("#a5372e");
+const LAB_MARKER_COLOR = "#f59e0b";
+// Per-vertex lab attributes on the ventricular structures (all start at 0: no effect).
+const LAB_ATTRIBUTES = ["aLabW", "aOstium", "aRestrict", "aPinch"] as const;
 const label = (v: Vessel) => VESSEL[v].label;
 
 const MUSCLE_DEEP = new THREE.Color("#5c1d1a");
@@ -128,10 +145,20 @@ function useBvh(parts: AtlasPart[]) {
 
 /** BodyParts3D atlas heart: every coronary branch is a named FMA structure coloured by its vessel's model. */
 export default function AtlasHeart(props: Props) {
-  const { probs, selected, hovered, mode, xray, chest, twin, timing, onSelect, onHover, onPick, onReady } = props;
+  const { probs, selected, hovered, mode, xray, chest, twin, timing, lab = null, onLabViews, onSelect, onHover, onPick, onReady } = props;
   const gltf = useGLTF(ATLAS_HEART_URL, false, true); // meshopt-compressed; decoder is bundled, no CDN
   const atlas = useMemo(() => prepareAtlasHeart(gltf.scene), [gltf.scene]);
   useBvh(atlas.parts);
+  useLabAttributes(atlas);
+  const labOn = lab !== null;
+  // Lab anatomy (ostium distances, markers, wall mapping) is computed the first time the lab opens.
+  const labAnatomy = useMemo(() => (labOn ? prepareLabAnatomy(atlas) : null), [atlas, labOn]);
+  const labMaterials = useLabMaterials(atlas);
+  useEffect(() => {
+    if (labAnatomy) onLabViews?.(Object.fromEntries(VESSEL_IDS.map((v) => [v, labAnatomy.markers[v].view])) as Record<Vessel, THREE.Vector3>);
+  }, [labAnatomy, onLabViews]);
+  useLabView(atlas, labAnatomy, lab);
+  useFlowPulses(labMaterials, lab, timing);
   const part = (key: string) => atlas.parts.find((p) => p.key === key);
   const wallRef = useRef<THREE.Mesh>(null);
   const atriaRef = useRef<THREE.Mesh>(null);
@@ -165,19 +192,29 @@ export default function AtlasHeart(props: Props) {
     };
     return { vent: centre(["ventricles"]), atr: centre(["atria"]), out: centre(["aorta", "pulmonary"]) };
   }, [atlas]);
+  useLayoutEffect(() => {
+    LAB.uLabPivot.value.copy(pivots.vent);
+  }, [pivots]);
 
   // Function twin: ventricles squeeze with the patient's EF, atria kick after the P wave, the great
   // arteries distend with ejection; in LBBB the ventricles rock (septum early, lateral wall late).
+  // The lab shaders read the same squeeze to undo part of it in a hypokinetic territory.
   useHeartMotion(twin, timing, (m) => {
     const v = m.ventricular;
-    vent.current?.scale.set(1 - m.squeeze * v, 1 - 0.55 * m.squeeze * v, 1 - m.squeeze * v);
+    const sx = 1 - m.squeeze * v, sy = 1 - 0.55 * m.squeeze * v;
+    vent.current?.scale.set(sx, sy, sx);
+    LAB.uLabScale.value.set(sx, sy, sx);
     if (vent.current) vent.current.rotation.z = 0.05 * m.rock;
     atr.current?.scale.setScalar(1 - 0.05 * m.atrial + 0.012 * v);
     outflow.current?.scale.setScalar(1 + m.aortic * v);
   });
 
   const wall = part("ventricles")!;
-  const occluders = xray ? undefined : [wallRef, atriaRef, vesselsRef] as RefObject<THREE.Object3D>[];
+  // The lab shows the atria and great arteries see-through (the coronary origins and proximal trunks run under
+  // them), so only the ventricles hide its labels.
+  const seeThrough = xray || labOn;
+  const occluders = xray ? undefined : (labOn ? [wallRef] : [wallRef, atriaRef, vesselsRef]) as RefObject<THREE.Object3D>[];
+  const marker = lab && labAnatomy ? labAnatomy.markers[lab.vessel] : null;
 
   return (
     <TipContext.Provider value={tipApi}>
@@ -185,16 +222,27 @@ export default function AtlasHeart(props: Props) {
         <HoverTip setter={tipSetter} />
         <FlowAnchor id="heart" position={pivots.vent} />
         <Pivoted at={pivots.vent} innerRef={vent}>
-          <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
+          <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} focus={labOn ? null : selected ?? hovered} mode={labOn ? "arteries" : mode} xray={xray} lab={labOn} onSelect={onSelect} onPick={onPick} />
           {part("cardiac_veins") && <CardiacVeins part={part("cardiac_veins")!} />}
           {atlas.parts.filter((p) => p.layer === "coronary").map((p) => (
-            <Coronary key={p.key} part={p} probs={probs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onPick={onPick} />
+            <Coronary
+              key={p.key}
+              part={p}
+              probs={probs}
+              selected={selected}
+              hovered={hovered}
+              labMaterial={labOn ? labMaterials.byPart[p.key] : null}
+              onSelect={onSelect}
+              onHover={onHover}
+              onPick={onPick}
+            />
           ))}
           {VESSEL_IDS.map((v) => (
             <FlowAnchor key={v} id={v} position={atlas.labels[v]} />
           ))}
           {VESSEL_IDS.map((v) => {
-            const p = probs ? probs[v] : null;
+            // In the lab the arteries carry flow, not the patient's estimates: plain name tags (click to move the narrowing).
+            const p = probs && !labOn ? probs[v] : null;
             return (
               <VesselLabel
                 key={v}
@@ -202,22 +250,25 @@ export default function AtlasHeart(props: Props) {
                 name={label(v)}
                 position={atlas.labels[v]}
                 p={p}
-                color={p === null ? NEUTRAL_ARTERY : riskColor(p)}
-                selected={selected}
+                color={labOn ? LAB_ARTERY : p === null ? NEUTRAL_ARTERY : riskColor(p)}
+                selected={labOn ? lab.vessel : selected}
                 occluders={occluders}
                 onSelect={onSelect}
               />
             );
           })}
+          {lab && marker && (
+            <SandboxMarker marker={marker} narrowing={lab.state.narrowing} vessel={lab.vessel} occluders={occluders} />
+          )}
         </Pivoted>
         <Pivoted at={pivots.atr} innerRef={atr}>
-          {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={xray} />}
+          {part("atria") && <Tissue part={part("atria")!} meshRef={atriaRef} color="#7d302b" xray={seeThrough} />}
         </Pivoted>
         <Pivoted at={pivots.out} innerRef={outflow}>
           <group ref={vesselsRef}>
-            {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={xray} sheen />}
-            {part("pulmonary") && <Tissue part={part("pulmonary")!} color="#c47a72" xray={xray} sheen />}
-            {part("venae_cavae") && <Tissue part={part("venae_cavae")!} color="#6e3442" xray={xray} />}
+            {part("aorta") && <Tissue part={part("aorta")!} color="#d98c7c" xray={seeThrough} sheen />}
+            {part("pulmonary") && <Tissue part={part("pulmonary")!} color="#c47a72" xray={seeThrough} sheen />}
+            {part("venae_cavae") && <Tissue part={part("venae_cavae")!} color="#6e3442" xray={seeThrough} />}
           </group>
         </Pivoted>
         {chest && (
@@ -227,6 +278,181 @@ export default function AtlasHeart(props: Props) {
         )}
       </group>
     </TipContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Ischaemia lab (teaching sandbox, not this patient's arteries)
+// ---------------------------------------------------------------------------------------------------
+
+/** Zero-filled lab attributes on the wall, veins and coronary trees, present before their first draw. */
+function useLabAttributes(atlas: PreparedAtlasHeart) {
+  useMemo(() => {
+    for (const p of atlas.parts) {
+      if (p.key !== "ventricles" && p.layer !== "cardiac_vein" && p.layer !== "coronary") continue;
+      const n = p.geometry.getAttribute("position").count;
+      for (const name of LAB_ATTRIBUTES) {
+        if (!p.geometry.getAttribute(name)) p.geometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(n), 1));
+      }
+    }
+  }, [atlas]);
+}
+
+/** One flow-pulse material per coronary tree, grouped by phasic pattern (left and right coronary). */
+function useLabMaterials(atlas: PreparedAtlasHeart) {
+  const value = useMemo(() => {
+    const byPart: Record<string, THREE.MeshPhysicalMaterial> = {};
+    const groups = new Map<number, THREE.Material[]>();
+    for (const p of atlas.parts.filter((x) => x.layer === "coronary")) {
+      const m = patchMaterial(new THREE.MeshPhysicalMaterial({
+        color: LAB_ARTERY, emissive: new THREE.Color("#3a0b07"), roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.15,
+        side: THREE.DoubleSide,
+      }), { lab: "flow" });
+      byPart[p.key] = m;
+      const v = VESSELS.find((x) => x.atlasPart === p.key);
+      const dsvr = v ? ARTERY_PHYSIOLOGY[v.id].dsvr : LEFT_MAIN_DSVR;
+      groups.set(dsvr, [...(groups.get(dsvr) ?? []), m]);
+    }
+    return { byPart, groups: [...groups].map(([dsvr, materials]) => ({ dsvr, materials })) };
+  }, [atlas]);
+  useEffect(() => () => Object.values(value.byPart).forEach((m) => m.dispose()), [value]);
+  return value;
+}
+
+/** Writes the chosen artery's territory, restricted path and narrowing into the lab attributes and uniforms. */
+function useLabView(atlas: PreparedAtlasHeart, anatomy: AtlasLabAnatomy | null, lab: AtlasLab | null) {
+  const vessel = lab?.vessel ?? null;
+  useLayoutEffect(() => {
+    if (!anatomy || !vessel) return;
+    const k = VESSEL_IDS.indexOf(vessel);
+    const T = atlas.territory;
+    const marker = anatomy.markers[vessel];
+    for (const p of atlas.parts) {
+      const g = p.geometry;
+      const w = g.getAttribute("aLabW") as THREE.BufferAttribute | undefined;
+      if (!w) continue;
+      const map = anatomy.wallIndex[p.key];
+      for (let i = 0; i < w.count; i++) w.setX(i, T[(map ? map[i] : i) * N + k]);
+      w.needsUpdate = true;
+      if (p.layer !== "coronary") continue;
+      const mine = VESSELS.find((v) => v.atlasPart === p.key)?.id === vessel;
+      fill(g, "aOstium", anatomy.ostium[p.key]);
+      fill(g, "aRestrict", mine ? marker.restricted : null);
+      fill(g, "aPinch", mine ? marker.pinch : null);
+    }
+    LAB.uMarkerPos.value.copy(marker.position);
+    LAB.uMarkerDir.value.copy(marker.tangent);
+  }, [atlas, anatomy, vessel]);
+
+  const state = lab?.state ?? null;
+  useLayoutEffect(() => {
+    if (!state) return;
+    LAB.uLabHypo.value = 1 - state.wallThickening;
+    LAB.uLabTint.value = Math.min(0.9, 1.6 * state.ischaemia); // dark blue, scaled by the ischaemia fraction
+    LAB.uLabOutline.value = 0.32;
+    LAB.uFlowRel.value = state.relFlow;
+    LAB.uFlowGain.value = 2.6;
+    LAB.uPinch.value = state.narrowing;
+  }, [state]);
+  // Lab off (or the heart unmounts): back to the patient's own twin.
+  useEffect(() => {
+    if (!state) return;
+    return () => {
+      LAB.uLabHypo.value = 0;
+      LAB.uLabTint.value = 0;
+      LAB.uLabOutline.value = 0;
+      LAB.uFlowGain.value = 0;
+      LAB.uPinch.value = 0;
+    };
+  }, [state === null]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+function fill(g: THREE.BufferGeometry, name: string, src: Float32Array | null | undefined) {
+  const a = g.getAttribute(name) as THREE.BufferAttribute;
+  const arr = a.array as Float32Array;
+  if (src && src.length === arr.length) arr.set(src);
+  else arr.fill(0);
+  a.needsUpdate = true;
+}
+
+/**
+ * Coronary flow pulses: each tree's phase advances with the shared heart clock, weighted towards diastole
+ * by its diastolic-to-systolic velocity ratio, at a speed proportional to flow (the demand factor).
+ * Integrated over the clock's 2 ms ticks, so the pulses surge in step with relaxation. No allocations.
+ */
+function useFlowPulses(mats: ReturnType<typeof useLabMaterials>, lab: AtlasLab | null, timing: BeatTiming) {
+  const means = useMemo(() => mats.groups.map((g) => phasicMean(g.dsvr, timing)), [mats, timing]);
+  const phases = useMemo(() => new Float64Array(mats.groups.length), [mats]);
+  const live = useRef({ lab, timing, means });
+  live.current = { lab, timing, means };
+  const last = useRef(heartClock.count);
+  useFrame(() => {
+    const { lab: l, timing: tm, means: mean } = live.current;
+    let from = last.current;
+    const to = heartClock.count;
+    last.current = to;
+    if (!l) return;
+    if (to - from > RING_SIZE) from = to - RING_SIZE;
+    const step = FLOW_SPEED_MM_S * l.state.demand * TICK;
+    const wrap = FLOW_SPACING_MM * 997;
+    for (let k = from; k < to; k++) {
+      const v = ventricularContraction(readTick(k), tm);
+      for (let g = 0; g < phases.length; g++) {
+        const dsvr = mats.groups[g].dsvr;
+        phases[g] = (phases[g] + (step * (dsvr - (dsvr - 1) * v)) / mean[g]) % wrap;
+      }
+    }
+    for (let g = 0; g < phases.length; g++) {
+      const list = mats.groups[g].materials;
+      for (let i = 0; i < list.length; i++) (list[i].userData.uPhase as { value: number }).value = phases[g];
+    }
+  });
+}
+
+/**
+ * The SANDBOX narrowing: an amber ring on the chosen artery's proximal trunk (the vessel waist inside it is
+ * drawn by the shader) with a label that says what it is. It follows a hypokinetic wall like the vessel.
+ */
+function SandboxMarker({ marker, narrowing, vessel, occluders }: {
+  marker: LabMarker;
+  narrowing: number;
+  vessel: Vessel;
+  occluders: RefObject<THREE.Object3D>[] | undefined;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const quaternion = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), marker.tangent),
+    [marker],
+  );
+  const local = useMemo(() => new THREE.Vector3(), []);
+  useFrame(() => {
+    const g = group.current;
+    if (!g) return;
+    // Same local scale as the shader at the marker (its territory weight is that of the trunk there, ~1).
+    const S = LAB.uLabScale.value;
+    const c = Math.min(1, Math.max(0, LAB.uLabHypo.value));
+    local.set(1 - (1 - S.x) * (1 - c), 1 - (1 - S.y) * (1 - c), 1 - (1 - S.z) * (1 - c)).divide(S);
+    g.position.copy(marker.position).sub(LAB.uLabPivot.value).multiply(local).add(LAB.uLabPivot.value);
+  });
+  const r = marker.radius;
+  return (
+    <group ref={group} position={marker.position}>
+      {/* A band round the vessel (the waist inside it is drawn by the vessel shader)... */}
+      <mesh quaternion={quaternion} raycast={() => null} renderOrder={5}>
+        <torusGeometry args={[r * 2.4, r * 0.38, 10, 40]} />
+        <meshBasicMaterial color={LAB_MARKER_COLOR} toneMapped={false} />
+      </mesh>
+      {/* ...and a screen-space ring with its label, so it reads at any zoom (hidden when the heart is in the way). */}
+      <Html center zIndexRange={[16, 12]} occlude={occluders} style={{ pointerEvents: "none" }}>
+        <div className="relative h-7 w-7">
+          <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.85)]" />
+          <div className="absolute bottom-full left-1/2 h-4 w-0 -translate-x-1/2 border-l-[1.5px] border-amber-400" />
+          <div className="absolute bottom-[calc(100%+16px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-amber-400 bg-amber-950/90 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-amber-100 shadow">
+            SANDBOX narrowing {Math.round(narrowing * 100)}% <span className="font-normal text-amber-300">· {label(vessel)}</span>
+          </div>
+        </div>
+      </Html>
+    </group>
   );
 }
 
@@ -240,12 +466,14 @@ interface WallProps {
   focus: Vessel | null;
   mode: "arteries" | "territories";
   xray: boolean;
+  /** Ischaemia lab on: clicking moves the sandbox narrowing to the artery that supplies this wall. */
+  lab: boolean;
   onSelect: (v: Vessel | null) => void;
   onPick: (pick: AtlasPick | null) => void;
 }
 
 /** Ventricular myocardium: muscle with epicardial fat in the grooves; tinted by territory. */
-function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSelect, onPick }: WallProps) {
+function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, lab, onSelect, onPick }: WallProps) {
   const { geometry } = part;
   const base = useMemo(() => {
     const pos = geometry.getAttribute("position");
@@ -298,7 +526,7 @@ function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSele
     sheenRoughness: 0.5,
     sheenColor: new THREE.Color("#ff5a48"),
     envMapIntensity: 0.85,
-  }), { bump: { freq: 260, strength: 0.9 }, fresnel: XRAY_FRESNEL }), []);
+  }), { bump: { freq: 260, strength: 0.9 }, fresnel: XRAY_FRESNEL, lab: "wall" }), []);
   useXray(material, xray, 0.55);
 
   const supplier = (face: THREE.Face) => {
@@ -310,9 +538,11 @@ function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, onSele
     if (!e.face) return;
     const v = supplier(e.face);
     onPick(null);
-    onSelect(v === selected ? null : v);
+    onSelect(lab || v !== selected ? v : null);
   };
-  const tip = useTip((e) => (e.face ? { text: "Ventricular wall", sub: `Usually supplied by the ${label(supplier(e.face))} · click to inspect` } : null));
+  const tip = useTip((e) => (e.face
+    ? { text: "Ventricular wall", sub: `Usually supplied by the ${label(supplier(e.face))} · ${lab ? "click to put the sandbox narrowing on it" : "click to inspect"}` }
+    : null));
 
   return (
     <BvhMesh
@@ -358,9 +588,10 @@ function Tissue({ part, color, xray, sheen, meshRef }: {
 }
 
 function CardiacVeins({ part }: { part: AtlasPart }) {
-  const material = useMemo(() => new THREE.MeshPhysicalMaterial({
+  // Lab-patched so the veins follow a hypokinetic territory with the wall (no effect otherwise).
+  const material = useMemo(() => patchMaterial(new THREE.MeshPhysicalMaterial({
     color: "#4a2638", roughness: 0.32, clearcoat: 0.9, clearcoatRoughness: 0.2, side: THREE.DoubleSide,
-  }), []);
+  }), { lab: "vessel" }), []);
   // Anatomical context: names itself on hover, but clicks pass through to the wall underneath.
   const tip = useTip((e) => {
     const b = branchName(part, e);
@@ -374,13 +605,15 @@ interface CoronaryProps {
   probs: ArteryProbs | null;
   selected: Vessel | null;
   hovered: Vessel | null;
+  /** Ischaemia lab: flow-pulse material used instead of the risk colour. */
+  labMaterial: THREE.Material | null;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
   onPick: (pick: AtlasPick | null) => void;
 }
 
 /** One coronary tree (all its named branches in one mesh), coloured by its vessel's model. */
-function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }: CoronaryProps) {
+function Coronary({ part, probs, selected, hovered, labMaterial, onSelect, onHover, onPick }: CoronaryProps) {
   // Model output shown by this tree (registry); trees without one (the left main) stay neutral.
   const vessel = VESSELS.find((v) => v.atlasPart === part.key)?.id ?? null;
   const unmodelled = UNMODELLED.find((u) => u.atlasPart === part.key);
@@ -390,6 +623,9 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
   const tip = useTip((e) => {
     const b = branchAt(e);
     if (!b) return null;
+    if (labMaterial) {
+      return { text: b.name, sub: vessel ? `${b.fma} · lab: click to put the sandbox narrowing on the ${label(vessel)}` : `${b.fma} · feeds the LAD and LCX` };
+    }
     return {
       text: b.name,
       sub: vessel ? `${b.fma} · coloured by the ${label(vessel)} model` : `${b.fma} · not labelled in the dataset`,
@@ -399,7 +635,7 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
   return (
     <BvhMesh
       geometry={part.geometry}
-      material={material}
+      material={labMaterial ?? material}
       pickable
       onClick={(e) => {
         e.stopPropagation();
@@ -409,8 +645,8 @@ function Coronary({ part, probs, selected, hovered, onSelect, onHover, onPick }:
           if (branch && unmodelled) onPick({ vessel: unmodelled.id, part: part.label, partFma: part.fma, branch });
           return;
         }
-        const deselect = vessel === selected;
-        onPick(deselect || !branch ? null : { vessel, part: part.label, partFma: part.fma, branch });
+        const deselect = !labMaterial && vessel === selected;
+        onPick(deselect || !branch || labMaterial ? null : { vessel, part: part.label, partFma: part.fma, branch });
         onSelect(deselect ? null : vessel);
       }}
       onPointerOver={(e) => {

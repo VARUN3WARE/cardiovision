@@ -3,7 +3,12 @@
  *  - bump: procedural tissue relief from 3D noise in object space (derivative bump mapping);
  *  - cutaway: discards whatever lies between the camera and the heart within a radius, so the
  *    chest wall opens a window onto the heart from any viewing angle;
- *  - fresnel: alpha rises towards silhouettes (ghosted skin).
+ *  - fresnel: alpha rises towards silhouettes (ghosted skin);
+ *  - lab: the ischaemia lab (a teaching sandbox). Every ventricular structure ("wall", "vessel", "flow")
+ *    can cancel part of the twin's squeeze where the chosen artery's territory is hypokinetic; the wall
+ *    also takes the ischaemic tint, and the coronary trees ("flow") carry glowing pulses moving outward
+ *    from the ostia (density beyond the narrowing scaled by the flow that gets through) and the waist
+ *    drawn at the narrowing.
  */
 import * as THREE from "three";
 import { ATLAS_SCALE } from "./atlasAnatomy";
@@ -14,13 +19,45 @@ export const CUTAWAY = {
   uCutOn: { value: 1 },
 };
 
+/** Ischaemia lab uniforms, shared by every lab-patched material (one atlas heart at a time). */
+export const LAB = {
+  uLabPivot: { value: new THREE.Vector3() }, // ventricular pivot (centred atlas frame, metres)
+  uLabScale: { value: new THREE.Vector3(1, 1, 1) }, // the ventricles' scale this frame (the twin's squeeze)
+  uLabHypo: { value: 0 }, // share of the squeeze lost in the territory core: 1 − wall thickening
+  uLabTint: { value: 0 }, // ischaemic tint strength
+  uLabOutline: { value: 0 }, // territory outline strength
+  uFlowRel: { value: 1 }, // share of pulses that get through the narrowing (flow relative to demand)
+  uFlowGain: { value: 0 }, // pulse brightness
+  uFlowColor: { value: new THREE.Color("#ffe9b8") },
+  uPinch: { value: 0 }, // drawn narrowing (diameter fraction)
+  uMarkerPos: { value: new THREE.Vector3() }, // narrowing centre on the trunk axis (metres)
+  uMarkerDir: { value: new THREE.Vector3(0, 1, 0) }, // trunk direction there
+};
+/** Distance between successive flow pulses along an artery, mm. */
+export const FLOW_SPACING_MM = 12;
+
 interface Patch {
   bump?: { freq: number; strength: number };
   cutaway?: boolean;
   fresnel?: { min: number; power: number };
   /** Diagonal stripes whose strength is material.userData.uStripe.value (0..1): the "undecided" band. */
   stripes?: boolean;
+  /** Ischaemia lab: "wall" (hypokinesis + tint), "vessel" (hypokinesis) or "flow" (hypokinesis + pulses + waist). */
+  lab?: "wall" | "vessel" | "flow";
 }
+
+// Vertex stage: pinch at the narrowing (flow only), then hypokinesis. The group around the ventricles
+// scales them by uLabScale about uLabPivot; pre-scaling by local/uLabScale leaves the share aLabW·uLabHypo
+// of that squeeze undone.
+const LAB_VERTEX = (flow: boolean) => `
+  {
+    ${flow ? `vec3 cvRel = transformed - uMarkerPos;
+    vec3 cvAxis = uMarkerPos + uMarkerDir * dot(cvRel, uMarkerDir);
+    transformed = cvAxis + (transformed - cvAxis) * (1.0 - uPinch * aPinch);` : ""}
+    vec3 cvS = max(uLabScale, vec3(1e-3));
+    vec3 cvLocal = 1.0 - (1.0 - cvS) * (1.0 - clamp(aLabW * uLabHypo, 0.0, 1.0));
+    transformed = uLabPivot + (transformed - uLabPivot) * cvLocal / cvS;
+  }`;
 
 // Simplex noise 3D: Ian McEwan / Ashima Arts, MIT licence (webgl-noise).
 const NOISE = /* glsl */ `
@@ -60,8 +97,13 @@ export function patchMaterial<T extends THREE.Material>(material: T, patch: Patc
   const key = JSON.stringify(patch);
   material.customProgramCacheKey = () => key;
   if (patch.stripes) material.userData.uStripe = { value: 0 };
+  if (patch.lab === "flow") material.userData.uPhase = { value: 0 };
   material.onBeforeCompile = (shader) => {
     if (patch.stripes) shader.uniforms.uStripe = material.userData.uStripe;
+    if (patch.lab) {
+      Object.assign(shader.uniforms, LAB);
+      if (patch.lab === "flow") shader.uniforms.uPhase = material.userData.uPhase;
+    }
     shader.uniforms.uCutRadius = CUTAWAY.uCutRadius;
     shader.uniforms.uCutOn = CUTAWAY.uCutOn;
     shader.uniforms.uBumpFreq = { value: patch.bump?.freq ?? 0 };
@@ -72,6 +114,34 @@ export function patchMaterial<T extends THREE.Material>(material: T, patch: Patc
         "#include <project_vertex>",
         "#include <project_vertex>\nvCvObj = transformed;\nvCvWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;",
       );
+    if (patch.lab) {
+      const flow = patch.lab === "flow";
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          `#include <common>
+attribute float aLabW;
+uniform vec3 uLabPivot;
+uniform vec3 uLabScale;
+uniform float uLabHypo;
+varying float vCvLabW;
+${flow ? `attribute float aOstium;
+attribute float aRestrict;
+attribute float aPinch;
+uniform float uPinch;
+uniform vec3 uMarkerPos;
+uniform vec3 uMarkerDir;
+varying float vCvOstium;
+varying float vCvRestrict;` : ""}`,
+        )
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+${LAB_VERTEX(flow)}
+  vCvLabW = aLabW;
+  ${flow ? "vCvOstium = aOstium;\n  vCvRestrict = aRestrict;" : ""}`,
+        );
+    }
     let frag = shader.fragmentShader.replace(
       "#include <common>",
       `#include <common>
@@ -82,8 +152,49 @@ uniform float uCutOn;
 uniform float uBumpFreq;
 uniform float uBumpStrength;
 ${patch.stripes ? "uniform float uStripe;" : ""}
+${patch.lab ? "varying float vCvLabW;\nuniform float uLabTint;\nuniform float uLabOutline;" : ""}
+${patch.lab === "flow" ? "varying float vCvOstium;\nvarying float vCvRestrict;\nuniform float uPhase;\nuniform float uFlowRel;\nuniform float uFlowGain;\nuniform vec3 uFlowColor;" : ""}
 ${patch.bump ? NOISE : ""}`,
     );
+    if (patch.lab === "wall") {
+      // Ischaemic territory: dark blue tint, plus a faint outline where the territory weight crosses 0.5.
+      frag = frag.replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+  float cvIsch = uLabTint * smoothstep(0.3, 0.85, vCvLabW);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.07, 0.27), cvIsch);
+  {
+    float cvFw = max(fwidth(vCvLabW), 1e-4);
+    float cvLine = 1.0 - smoothstep(0.5 * cvFw, 1.5 * cvFw, abs(vCvLabW - 0.5));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.76, 1.0), cvLine * uLabOutline);
+  }`,
+      );
+      // The red sheen would turn the ischaemic blue purple at grazing angles.
+      frag = frag.replace(
+        "#include <lights_physical_fragment>",
+        `#include <lights_physical_fragment>
+  #ifdef USE_SHEEN
+    material.sheenColor *= 1.0 - cvIsch;
+  #endif`,
+      );
+    }
+    if (patch.lab === "flow") {
+      // Comet-shaped pulses moving outward (bright head downstream). Beyond the narrowing each pulse gets
+      // through with probability uFlowRel (a per-pulse hash, so a pulse either travels on or is missing).
+      frag = frag.replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+  {
+    float cvPh = (vCvOstium - uPhase) / ${FLOW_SPACING_MM.toFixed(1)};
+    float cvN = floor(cvPh);
+    float cvX = fract(cvPh);
+    float cvPulse = smoothstep(0.5, 0.86, cvX) * (1.0 - smoothstep(0.86, 0.96, cvX));
+    float cvKeep = step(fract(sin(cvN * 12.9898 + 4.1) * 43758.5453), uFlowRel);
+    cvPulse *= mix(1.0, cvKeep, step(0.5, vCvRestrict));
+    totalEmissiveRadiance += uFlowColor * (cvPulse * uFlowGain);
+  }`,
+      );
+    }
     if (patch.stripes) {
       // World-space diagonal stripes (same width on every heart model); dim both the base and emissive colour.
       frag = frag.replace(

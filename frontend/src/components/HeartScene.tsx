@@ -6,7 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
-import AtlasHeart, { type AtlasPick, type ChestLayers } from "./AtlasHeart";
+import AtlasHeart, { type AtlasLab, type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import VesselInspector from "./VesselInspector";
 import EcgMonitor from "../twin/EcgMonitor";
@@ -15,6 +15,9 @@ import { useHeartMotion } from "../twin/useHeartMotion";
 import { VESSEL, VESSEL_IDS } from "../anatomy/registry";
 import ReasoningFlow from "../reasoning/ReasoningFlow";
 import { FlowAnchor } from "../reasoning/anchors";
+import LabPanel, { LabBanner, LabLegend } from "../lab/LabPanel";
+import { LAB_DEFAULT, baselineText, labFromQuery, labPatient, labTwin, type LabSettings } from "../lab/labState";
+import { labState } from "../twin/coronaryPhysiology";
 import type { ExplainResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
@@ -34,6 +37,9 @@ const HEART_ROTATION = new THREE.Euler(-0.25, -0.35, 0.62);
 const DEFAULT_VIEW = new THREE.Vector3(0, 0.015, 1);
 const HEART_DISTANCE = 6.8;
 const CHEST_DISTANCE = 21;
+// Ischaemia lab panel: docked at the right when the 3D view is wide enough, else a sheet at the bottom.
+const LAB_PANEL_W = 262;
+const LAB_SIDE_MIN_W = 600;
 
 /** Standard anatomical views. World frame: +X patient's left, +Y superior, +Z anterior. */
 const ANATOMICAL_VIEWS: { key: string; title: string; dir: [number, number, number] }[] = [
@@ -100,8 +106,14 @@ export default function HeartScene({
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [showEcg, setShowEcg] = useState(true);
-  // Reasoning flow (deep link: ?reasoning=1, optionally &model=lad|lcx|rca).
-  const [reasoning, setReasoning] = useState(() => new URLSearchParams(window.location.search).get("reasoning") === "1");
+  // Ischaemia lab, a teaching sandbox on the Atlas heart (deep link: ?lab=lad|lcx|rca&narrowing=80&exercise=1).
+  const [labOn, setLabOn] = useState(() => labFromQuery(window.location.search) !== null);
+  const [labSettings, setLabSettings] = useState<LabSettings>(() => labFromQuery(window.location.search) ?? LAB_DEFAULT);
+  // The chest view to restore when the lab closes (shown by default, so also after a lab deep link).
+  const chestBeforeLab = useRef<boolean | null>(labFromQuery(window.location.search) ? true : null);
+  // Reasoning flow (deep link: ?reasoning=1, optionally &model=lad|lcx|rca). The lab takes precedence.
+  const [reasoning, setReasoning] = useState(() =>
+    new URLSearchParams(window.location.search).get("reasoning") === "1" && labFromQuery(window.location.search) === null);
   const [fx, setFx] = useState(true);
   const [pins, setPins] = useState(false);
   const [hovered, setHovered] = useState<Vessel | null>(null);
@@ -116,15 +128,19 @@ export default function HeartScene({
   const [atlasOk, setAtlasOk] = useState<boolean | null>(null);
   const [atlasFailed, setAtlasFailed] = useState(false);
   const [atlasViews, setAtlasViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
-  const [chest, setChest] = useState(true);
+  const [chest, setChest] = useState(() => labFromQuery(window.location.search) === null);
   const [layers, setLayers] = useState<ChestLayers>({ skin: true, skeleton: true, organs: true });
   const [layerMenu, setLayerMenu] = useState(false);
+  const [moreMenu, setMoreMenu] = useState(false);
   const [xray, setXray] = useState(false);
   const [pick, setPick] = useState<AtlasPick | null>(null);
   const [view, setView] = useState<{ dir: THREE.Vector3; n: number } | null>(null);
-  // Opening straight into the atlas (deep link) starts with the chest fly-in too.
+  // Opening straight into the atlas (deep link) starts with the chest fly-in too (not into the lab: no chest there).
   const [fly, setFly] = useState<{ from: number; to: number; n: number } | null>(() =>
-    initialModel() === "atlas" && !reducedMotion() ? { from: CHEST_DISTANCE, to: HEART_DISTANCE, n: 1 } : null);
+    initialModel() === "atlas" && !reducedMotion() && labFromQuery(window.location.search) === null
+      ? { from: CHEST_DISTANCE, to: HEART_DISTANCE, n: 1 } : null);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const { width: viewWidth, height: viewHeight } = useElementSize(viewRef);
 
   useEffect(() => {
     specimenAvailable().then(setAvailable);
@@ -144,6 +160,7 @@ export default function HeartScene({
   );
 
   const chooseModel = (m: HeartModel) => {
+    if (m !== "atlas" && labOn) closeLab(); // the lab runs on the Atlas heart only
     setModel(m);
     setPick(null);
     // Entering the atlas with the chest shown: start outside the chest and fly in to the heart.
@@ -152,12 +169,88 @@ export default function HeartScene({
   const showPick = pick && (pick.vessel === "lm" || pick.vessel === selected) ? pick : null;
   // Function twin: the patient's recorded pulse, EF, blood pressure and ECG findings drive the heart.
   const twin = useMemo(() => twinFromResult(result, bpm), [result, bpm]);
-  const timing = useMemo(() => beatTiming(twin), [twin]);
+  // Ischaemia lab: the patient's resting pulse, systolic BP and age plus a generic sandbox narrowing. While it
+  // runs, the twin beats at the lab's exercise rate and the monitor shows the lab's ST depression (marked "lab").
+  const labActive = labOn && useAtlas;
+  const labIn = useMemo(() => labPatient(result, twin), [result, twin]);
+  const lab = useMemo(
+    () => (labActive ? labState(labSettings.vessel, labSettings.narrowing / 100, labSettings.exercise, labIn) : null),
+    [labActive, labSettings, labIn],
+  );
+  const atlasLab: AtlasLab | null = useMemo(() => (lab ? { vessel: lab.vessel, state: lab } : null), [lab]);
+  const shownTwin = useMemo(() => (lab ? labTwin(twin, lab) : twin), [lab, twin]);
+  const timing = useMemo(() => beatTiming(shownTwin), [shownTwin]);
+  const labSide = viewWidth >= LAB_SIDE_MIN_W;
+  // Narrow 3D view (e.g. 1024 px windows): tighter toolbar, with X-ray, HD and Reset in a "⋯" menu.
+  const compact = viewWidth > 0 && viewWidth < 520;
+  const pad = compact ? "px-1.5" : "px-2";
+
+  const openLab = () => {
+    setReasoning(false);
+    setPick(null);
+    setShowEcg(true);
+    if (model !== "atlas") setModel("atlas");
+    // The lab needs a clear view of the heart: the chest comes back when the lab closes.
+    chestBeforeLab.current = chest;
+    setChest(false);
+    setFly(null);
+    setLabOn(true);
+  };
+  function closeLab() {
+    setLabOn(false);
+    if (chestBeforeLab.current !== null) setChest(chestBeforeLab.current);
+    chestBeforeLab.current = null;
+  }
+  // In the lab, clicking an artery or a wall moves the sandbox narrowing there (the patient's selection is untouched).
+  const select = (v: Vessel | null) => {
+    if (labActive) {
+      if (v) setLabSettings((st) => ({ ...st, vessel: v }));
+      return;
+    }
+    onSelect(v);
+  };
+  // Face the sandbox narrowing (and its artery's territory) when the lab opens or the narrowing moves.
+  const [labViews, setLabViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
+  useEffect(() => {
+    if (!labActive || !labViews) return;
+    setView((cur) => ({ dir: labViews[labSettings.vessel].clone(), n: (cur?.n ?? 0) + 1 }));
+  }, [labActive, labViews, labSettings.vessel]);
   const rwma = useMemo(() => {
     const exp = result?.explanations.cad;
     const i = exp ? exp.feature_names.indexOf("Region RWMA") : -1;
     return exp && i >= 0 ? exp.feature_values[i] : null;
   }, [result]);
+
+  const xrayButton = useAtlas && (
+    <button
+      onClick={() => setXray((x) => !x)}
+      aria-pressed={xray}
+      className={`rounded ${pad} py-1 ${xray ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+      title="See-through heart wall: shows the vessels on the back of the heart from the front"
+    >
+      X-ray
+    </button>
+  );
+  const hdButton = (
+    <button
+      onClick={() => setFx((f) => !f)}
+      className={`rounded bg-slate-900/80 ${pad} py-1 text-gray-300 hover:bg-slate-700`}
+      title="Ambient occlusion, bloom and vignette. Turn off on slow GPUs."
+    >
+      {fx ? "HD on" : "HD off"}
+    </button>
+  );
+  const resetButton = (
+    <button
+      onClick={() => {
+        onSelect(null);
+        setResetKey((k) => k + 1);
+      }}
+      className={`rounded bg-slate-900/80 ${pad} py-1 text-gray-300 hover:bg-slate-700`}
+    >
+      Reset
+    </button>
+  );
 
   useEffect(() => {
     document.body.style.cursor = hovered ? "pointer" : "auto";
@@ -168,13 +261,13 @@ export default function HeartScene({
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden rounded">
-    <div className="relative min-h-0 flex-1">
+    <div ref={viewRef} className="relative min-h-0 flex-1">
       <Canvas
         camera={{ position: [0, 0.1, 6.8], fov: 40 }}
         dpr={[1, 1.5]}
         gl={{ antialias: !fx }}
         onPointerMissed={() => {
-          onSelect(null);
+          select(null);
           setPick(null);
         }}
       >
@@ -194,9 +287,11 @@ export default function HeartScene({
                   mode={mode}
                   xray={xray}
                   chest={chest ? layers : null}
-                  twin={twin}
+                  twin={shownTwin}
                   timing={timing}
-                  onSelect={onSelect}
+                  lab={atlasLab}
+                  onLabViews={setLabViews}
+                  onSelect={select}
                   onHover={setHovered}
                   onPick={setPick}
                   onReady={setAtlasViews}
@@ -212,9 +307,9 @@ export default function HeartScene({
                   hovered={hovered ?? highlight}
                   mode={mode}
                   pins={pins}
-                  twin={twin}
+                  twin={shownTwin}
                   timing={timing}
-                  onSelect={onSelect}
+                  onSelect={select}
                   onHover={setHovered}
                   onReady={setSpecimenViews}
                 />
@@ -227,9 +322,9 @@ export default function HeartScene({
               hovered={hovered ?? highlight}
               mode={mode}
               pins={pins}
-              twin={twin}
+              twin={shownTwin}
               timing={timing}
-              onSelect={onSelect}
+              onSelect={select}
               onHover={setHovered}
             />
           )}
@@ -269,6 +364,12 @@ export default function HeartScene({
         <FirstFrame onReady={() => setFramesReady(true)} />
         {import.meta.env.DEV && <DevHook />}
         <FitCamera />
+        {/* Lab: keep the heart centred in the part of the view the panel leaves free (left of the side panel, or
+            between the toolbar, ~3 rows, and the bottom sheet, 52% of the height). */}
+        <ViewShift
+          x={labActive && labSide ? (LAB_PANEL_W + 12) / 2 : 0}
+          y={labActive && !labSide && viewHeight ? Math.max(0, 0.26 - 48 / viewHeight) : 0}
+        />
         <CameraRig
           focus={selected}
           resetKey={resetKey}
@@ -296,7 +397,7 @@ export default function HeartScene({
                 aria-checked={model === m}
                 onClick={() => chooseModel(m)}
                 title={MODEL_INFO[m].title}
-                className={`px-2 py-1 ${model === m ? "bg-slate-200 text-slate-900" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+                className={`${pad} py-1 ${model === m ? "bg-slate-200 text-slate-900" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
               >
                 {MODEL_INFO[m].label}
               </button>
@@ -307,7 +408,7 @@ export default function HeartScene({
           <button
             key={m}
             onClick={() => setMode(m)}
-            className={`rounded px-2 py-1 ${mode === m ? "bg-red-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+            className={`rounded ${pad} py-1 ${mode === m ? "bg-red-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
           >
             {m === "arteries" ? "Arteries" : "Territories"}
           </button>
@@ -320,7 +421,7 @@ export default function HeartScene({
                 setChest((c) => !c);
               }}
               aria-pressed={chest}
-              className={`rounded px-2 py-1 ${chest ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+              className={`rounded ${pad} py-1 ${chest ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
               title="Show the heart in the chest (BodyParts3D skin, skeleton, diaphragm, airway) with a cutaway window"
             >
               Chest
@@ -356,20 +457,13 @@ export default function HeartScene({
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setXray((x) => !x)}
-              aria-pressed={xray}
-              className={`rounded px-2 py-1 ${xray ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
-              title="See-through heart wall: shows the vessels on the back of the heart from the front"
-            >
-              X-ray
-            </button>
+            {!compact && xrayButton}
           </>
         )}
         {!useAtlas && (
         <button
           onClick={() => setPins((p) => !p)}
-          className={`rounded px-2 py-1 ${pins ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+          className={`rounded ${pad} py-1 ${pins ? "bg-sky-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
           title="Show numbered anatomy annotations"
         >
           Anatomy
@@ -377,43 +471,65 @@ export default function HeartScene({
         )}
         <button
           onClick={() => setBeating((b) => !b)}
-          className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
-          title="Toggle heartbeat animation (rate = patient pulse)"
+          className={`rounded bg-slate-900/80 ${pad} py-1 text-gray-300 hover:bg-slate-700`}
+          title={lab ? "Toggle heartbeat animation (rate set by the lab's exercise slider)" : "Toggle heartbeat animation (rate = patient pulse)"}
         >
-          {beating ? `♥ ${bpm}` : "♡ paused"}
+          {beating ? `♥ ${lab ? Math.round(lab.hr) : bpm}` : "♡ paused"}
         </button>
         <button
           onClick={() => setShowEcg((e) => !e)}
           aria-pressed={showEcg}
-          className={`rounded px-2 py-1 ${showEcg ? "bg-emerald-800 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+          className={`rounded ${pad} py-1 ${showEcg ? "bg-emerald-800 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
           title="Illustrative ECG monitor built from the patient's recorded findings, in step with the heartbeat"
         >
           ECG
         </button>
         <button
-          onClick={() => setReasoning((r) => !r)}
+          onClick={() => {
+            if (!reasoning && labOn) closeLab();
+            setReasoning((r) => !r);
+          }}
           aria-pressed={reasoning}
-          className={`rounded px-2 py-1 ${reasoning ? "bg-violet-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+          className={`rounded ${pad} py-1 ${reasoning ? "bg-violet-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
           title="Show how much each data type (history, symptoms, ECG, echo, labs, pre-test score) moved the selected model's estimate"
         >
           Reasoning
         </button>
-        <button
-          onClick={() => setFx((f) => !f)}
-          className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
-          title="Ambient occlusion, bloom and vignette. Turn off on slow GPUs."
-        >
-          {fx ? "HD on" : "HD off"}
-        </button>
-        <button
-          onClick={() => {
-            onSelect(null);
-            setResetKey((k) => k + 1);
-          }}
-          className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
-        >
-          Reset
-        </button>
+        {atlasOk && !atlasFailed && (
+          <button
+            onClick={() => (labOn ? closeLab() : openLab())}
+            aria-pressed={labOn}
+            className={`rounded ${pad} py-1 ${labOn ? "bg-amber-500 font-semibold text-slate-950" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+            title="Ischaemia lab: what a narrowed artery does to blood flow, with textbook physiology (a teaching sandbox on the Atlas heart, not this patient's arteries)"
+          >
+            Lab
+          </button>
+        )}
+        {compact ? (
+          <div className="relative">
+            <button
+              onClick={() => setMoreMenu((m) => !m)}
+              aria-expanded={moreMenu}
+              aria-label="More view controls"
+              title={useAtlas ? "X-ray, HD and Reset" : "HD and Reset"}
+              className="rounded bg-slate-900/80 px-1.5 py-1 text-gray-300 hover:bg-slate-700"
+            >
+              ⋯
+            </button>
+            {moreMenu && (
+              <div className="absolute right-0 top-7 z-20 flex flex-col gap-1 rounded bg-slate-900/95 p-1.5 shadow-lg" onMouseLeave={() => setMoreMenu(false)}>
+                {xrayButton}
+                {hdButton}
+                {resetButton}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {hdButton}
+            {resetButton}
+          </>
+        )}
       </div>
 
       {pending && probs && (
@@ -422,8 +538,38 @@ export default function HeartScene({
         </div>
       )}
 
+      {labActive && (
+        <>
+          {labSide && (
+            <LabBanner
+              className="absolute top-[4.5rem] z-20 max-w-[min(92%,440px)] -translate-x-1/2"
+              style={{ left: `calc((100% - ${LAB_PANEL_W + 12}px) / 2)` }}
+            />
+          )}
+          {lab && (
+            <LabPanel
+              settings={labSettings}
+              onChange={setLabSettings}
+              state={lab}
+              patient={labIn}
+              baseline={baselineText(result, twin, labIn)}
+              stReadable={twin.bbb !== "LBBB"}
+              onClose={closeLab}
+              className={labSide ? "absolute bottom-3 right-3 top-[4.5rem] z-20" : "absolute inset-x-2 bottom-2 z-20 max-h-[52%]"}
+              style={labSide ? { width: LAB_PANEL_W } : undefined}
+              banner={!labSide}
+            />
+          )}
+        </>
+      )}
+
       {/* Anatomical view buttons */}
-      <div className="absolute bottom-12 right-3 grid grid-cols-3 gap-0.5 text-[10px]" role="group" aria-label="Standard views">
+      <div
+        className="absolute bottom-12 right-3 grid grid-cols-3 gap-0.5 text-[10px]"
+        style={labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 1.75rem)" }) : undefined}
+        role="group"
+        aria-label="Standard views"
+      >
         {ANATOMICAL_VIEWS.map((v) => (
           <button
             key={v.key}
@@ -438,9 +584,9 @@ export default function HeartScene({
 
       {reasoning && <ReasoningCaption result={result} selected={selected} />}
 
-      {/* Selected vessel: inspector card (hidden while the reasoning towers use that space); a clicked
-          left-main branch gets a short note instead. */}
-      {reasoning ? null : selected ? (
+      {/* Selected vessel: inspector card (hidden while the reasoning towers or the lab use that space); a
+          clicked left-main branch gets a short note instead. */}
+      {reasoning || labActive ? null : selected ? (
         <VesselInspector
           vessel={selected}
           result={result}
@@ -465,6 +611,7 @@ export default function HeartScene({
           target="_blank"
           rel="noreferrer"
           className="absolute bottom-3 right-3 max-w-[240px] text-right text-[9px] leading-tight text-gray-500 hover:text-gray-300"
+          style={labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 0.5rem)" }) : undefined}
         >
           Reference anatomy, not this patient&apos;s imaging. Right dominance assumed. {ATLAS_CREDIT.text}
         </a>
@@ -481,7 +628,14 @@ export default function HeartScene({
         </a>
       )}
 
-      {/* Legend */}
+      {/* Legend (the lab has its own: its arteries show the sandbox, not the estimates) */}
+      {labActive ? (
+        labSide && (
+          <div className="absolute bottom-3 left-3 z-20 w-56">
+            <LabLegend />
+          </div>
+        )
+      ) : (
       <div className="absolute bottom-3 left-3 z-20 w-60 text-[10px] text-gray-400">
         <MapSemantics rwma={rwma} />
         {mode === "territories" && (
@@ -496,10 +650,11 @@ export default function HeartScene({
         </div>
         <BandLegend />
       </div>
+      )}
     </div>
     {showEcg && (
       <div className="h-[92px] shrink-0">
-        <EcgMonitor params={twin} timing={timing} />
+        <EcgMonitor params={shownTwin} timing={timing} />
       </div>
     )}
     </div>
@@ -550,6 +705,36 @@ function FirstFrame({ onReady }: { onReady: () => void }) {
     if (frames.current === 2) onReady();
   });
   return null;
+}
+
+/**
+ * Shift the rendered view (not the camera) so the heart sits in the part of the canvas an overlay leaves
+ * free: x pixels to the left, y × the canvas height upwards. Labels and picking follow the same projection.
+ */
+function ViewShift({ x, y }: { x: number; y: number }) {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const cam = camera as THREE.PerspectiveCamera;
+    if ((!x && !y) || !size.width || !size.height) cam.clearViewOffset();
+    else cam.setViewOffset(size.width, size.height, x, y * size.height, size.width, size.height);
+  }, [camera, size.width, size.height, x, y]);
+  useEffect(() => () => (camera as THREE.PerspectiveCamera).clearViewOffset(), [camera]);
+  return null;
+}
+
+/** Size of an element, kept up to date. */
+function useElementSize(ref: RefObject<HTMLElement>) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setSize((s) => (s.width === el.clientWidth && s.height === el.clientHeight ? s : { width: el.clientWidth, height: el.clientHeight }));
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    read();
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
 }
 
 /** Pull the camera back on narrow canvases so the whole heart stays in frame. */
@@ -654,6 +839,7 @@ function BandLegend() {
 }
 
 function initialModel(): HeartModel {
+  if (labFromQuery(window.location.search)) return "atlas"; // the lab runs on the Atlas heart
   const h = new URLSearchParams(window.location.search).get("heart");
   return h === "atlas" ? "atlas" : h === "schematic" ? "schematic" : "specimen";
 }
