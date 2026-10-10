@@ -3,6 +3,7 @@ import { FEATURE_GROUPS, FEATURE_LABELS, formatFeatureValue } from "../featureLa
 import { formatPct, reliability } from "../risk";
 import { MODEL_TABS, VESSEL } from "../anatomy/registry";
 import type { Vessel } from "./HeartScene";
+import EvidenceStrip from "../reasoning/EvidenceStrip";
 
 interface Props {
   result: ExplainResponse | null;
@@ -91,6 +92,8 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
           This vessel model is weaker (cross-validated AUC {m.cv.roc_auc.mean.toFixed(2)}): treat these drivers as indicative only.
         </p>
       )}
+
+      <EvidenceStrip exp={exp} />
 
       <div className="text-[11px] text-gray-400">
         Each bar shows how much a finding pushed the estimate <span className="text-red-400">up</span> or{" "}

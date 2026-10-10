@@ -16,6 +16,7 @@ import { NEUTRAL_ARTERY, fbm, riskColor } from "./heartAnatomy";
 import type { BeatTiming, TwinParams } from "../twin/twin";
 import { useHeartMotion } from "../twin/useHeartMotion";
 import { UNMODELLED, VESSEL, VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
+import { FlowAnchor } from "../reasoning/anchors";
 
 /** Which chest layers to draw around the heart. */
 export interface ChestLayers {
@@ -182,11 +183,15 @@ export default function AtlasHeart(props: Props) {
     <TipContext.Provider value={tipApi}>
       <group ref={root} scale={ATLAS_SCALE}>
         <HoverTip setter={tipSetter} />
+        <FlowAnchor id="heart" position={pivots.vent} />
         <Pivoted at={pivots.vent} innerRef={vent}>
           <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} xray={xray} onSelect={onSelect} onPick={onPick} />
           {part("cardiac_veins") && <CardiacVeins part={part("cardiac_veins")!} />}
           {atlas.parts.filter((p) => p.layer === "coronary").map((p) => (
             <Coronary key={p.key} part={p} probs={probs} selected={selected} hovered={hovered} onSelect={onSelect} onHover={onHover} onPick={onPick} />
+          ))}
+          {VESSEL_IDS.map((v) => (
+            <FlowAnchor key={v} id={v} position={atlas.labels[v]} />
           ))}
           {VESSEL_IDS.map((v) => {
             const p = probs ? probs[v] : null;

@@ -12,7 +12,9 @@ import VesselInspector from "./VesselInspector";
 import EcgMonitor from "../twin/EcgMonitor";
 import { advanceClock, beatTiming, twinFromResult, type BeatTiming, type TwinParams } from "../twin/twin";
 import { useHeartMotion } from "../twin/useHeartMotion";
-import { VESSEL_IDS } from "../anatomy/registry";
+import { VESSEL, VESSEL_IDS } from "../anatomy/registry";
+import ReasoningFlow from "../reasoning/ReasoningFlow";
+import { FlowAnchor } from "../reasoning/anchors";
 import type { ExplainResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
@@ -98,6 +100,8 @@ export default function HeartScene({
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [showEcg, setShowEcg] = useState(true);
+  // Reasoning flow (deep link: ?reasoning=1, optionally &model=lad|lcx|rca).
+  const [reasoning, setReasoning] = useState(() => new URLSearchParams(window.location.search).get("reasoning") === "1");
   const [fx, setFx] = useState(true);
   const [pins, setPins] = useState(false);
   const [hovered, setHovered] = useState<Vessel | null>(null);
@@ -125,6 +129,9 @@ export default function HeartScene({
   useEffect(() => {
     specimenAvailable().then(setAvailable);
     atlasAvailable().then(setAtlasOk);
+    const m = new URLSearchParams(window.location.search).get("model");
+    if (m && (VESSEL_IDS as readonly string[]).includes(m)) onSelect(m as Vessel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const useSpecimen = available === true && !specimenFailed && model === "specimen";
   const useAtlas = atlasOk === true && !atlasFailed && model === "atlas";
@@ -249,6 +256,14 @@ export default function HeartScene({
             <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
             <Vignette offset={0.3} darkness={0.7} />
           </EffectComposer>
+        )}
+
+        {reasoning && result && (
+          <ReasoningFlow
+            exp={result.explanations[selected ?? "cad"]}
+            target={selected ?? "cad"}
+            probability={result.results[selected ?? "cad"].probability}
+          />
         )}
 
         <FirstFrame onReady={() => setFramesReady(true)} />
@@ -376,6 +391,14 @@ export default function HeartScene({
           ECG
         </button>
         <button
+          onClick={() => setReasoning((r) => !r)}
+          aria-pressed={reasoning}
+          className={`rounded px-2 py-1 ${reasoning ? "bg-violet-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+          title="Show how much each data type (history, symptoms, ECG, echo, labs, pre-test score) moved the selected model's estimate"
+        >
+          Reasoning
+        </button>
+        <button
           onClick={() => setFx((f) => !f)}
           className="rounded bg-slate-900/80 px-2 py-1 text-gray-300 hover:bg-slate-700"
           title="Ambient occlusion, bloom and vignette. Turn off on slow GPUs."
@@ -413,8 +436,11 @@ export default function HeartScene({
         ))}
       </div>
 
-      {/* Selected vessel: inspector card; a clicked left-main branch gets a short note instead. */}
-      {selected ? (
+      {reasoning && <ReasoningCaption result={result} selected={selected} />}
+
+      {/* Selected vessel: inspector card (hidden while the reasoning towers use that space); a clicked
+          left-main branch gets a short note instead. */}
+      {reasoning ? null : selected ? (
         <VesselInspector
           vessel={selected}
           result={result}
@@ -576,6 +602,28 @@ function MapSemantics({ rwma }: { rwma: number | null }) {
   );
 }
 
+/**
+ * Reasoning view caption: which model's evidence is flowing where, and what the streams are (and are not).
+ */
+function ReasoningCaption({ result, selected }: { result: ExplainResponse | null; selected: Vessel | null }) {
+  const target = selected ? `${VESSEL[selected].label} model → ${VESSEL[selected].label} label` : "Overall CAD model → whole heart";
+  return (
+    <div
+      role="note"
+      className="pointer-events-none absolute left-1/2 top-[4.25rem] z-10 w-max max-w-[min(92%,420px)] -translate-x-1/2 rounded bg-slate-900/85 px-2.5 py-1.5 text-center text-[10px] leading-snug text-gray-300 shadow"
+    >
+      <div className="font-semibold text-white">
+        Reasoning: {result ? target : "run an estimate to see the evidence"}
+      </div>
+      <div>Data streams, not anatomy: width = how much each data type moved this estimate</div>
+      <div className="text-gray-400">
+        <span className="text-red-400">red pushes up</span> · <span className="text-sky-400">blue pulls down</span> ·
+        associations in this referral cohort, not causes · hover a tower for its findings
+      </div>
+    </div>
+  );
+}
+
 /** Three band swatches with their ranges; the middle (undecided) band is striped, as in 3D. */
 function BandLegend() {
   const [lo, hi] = getVesselCuts();
@@ -698,6 +746,7 @@ function Heart({ probs, selected, hovered, mode, pins, twin, timing, onSelect, o
 
   return (
     <group rotation={HEART_ROTATION} position={[0.1, -0.2, 0]}>
+      <FlowAnchor id="heart" />
       {pins && <AnatomyPins occluders={[myocardium, outflow, atria]} />}
       {/* Opaque anatomy swallows pointer events so arteries behind it can't be picked through it. */}
       <group ref={outflow} onPointerMove={stop} onClick={stop}>
@@ -918,14 +967,17 @@ function Artery({ seg, occluder, ...rest }: ArteryProps) {
     return { curve, radiusAt: vesselRadius(seg), labelPos };
   }, [seg]);
   return (
-    <ArteryTube
-      vessel={seg.vessel === "lm" || seg.vessel === "vein" ? null : seg.vessel}
-      name={seg.name}
-      curve={curve}
-      radiusAt={radiusAt}
-      labelPos={seg.label ? labelPos : null}
-      occluders={[occluder]}
-      {...rest}
-    />
+    <>
+      <ArteryTube
+        vessel={seg.vessel === "lm" || seg.vessel === "vein" ? null : seg.vessel}
+        name={seg.name}
+        curve={curve}
+        radiusAt={radiusAt}
+        labelPos={seg.label ? labelPos : null}
+        occluders={[occluder]}
+        {...rest}
+      />
+      {seg.label && seg.vessel !== "lm" && seg.vessel !== "vein" && <FlowAnchor id={seg.vessel} position={labelPos} />}
+    </>
   );
 }

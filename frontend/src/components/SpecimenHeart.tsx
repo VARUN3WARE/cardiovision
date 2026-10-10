@@ -8,6 +8,7 @@ import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import { NEUTRAL_ARTERY, riskColor, type Vessel } from "./heartAnatomy";
 import { SPECIMEN_SCALE, SPECIMEN_URL, TERRITORY_STRIDE as S, prepareSpecimen } from "./specimenAnatomy";
 import { VESSEL_IDS } from "../anatomy/registry";
+import { FlowAnchor } from "../reasoning/anchors";
 import type { BeatTiming, TwinParams } from "../twin/twin";
 import { useHeartMotion } from "../twin/useHeartMotion";
 
@@ -107,6 +108,7 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, tw
   return (
     <group scale={SPECIMEN_SCALE}>
       <group ref={beat}>
+        <FlowAnchor id="heart" />
         <group position={[-center.x, -center.y, -center.z]}>
           <mesh
             ref={meshRef}
@@ -143,6 +145,8 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, tw
               onHover={onHover}
             />
           ))}
+          {prep.vessels.map(({ seg, labelPos }) =>
+            seg.label && seg.vessel !== "lm" ? <FlowAnchor key={seg.name} id={seg.vessel} position={labelPos} /> : null)}
           {pins && <AnatomyPins occluders={[meshRef]} positions={prep.pins} />}
         </group>
       </group>
