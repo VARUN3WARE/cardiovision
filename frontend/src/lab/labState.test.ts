@@ -33,7 +33,7 @@ describe("ischaemia lab and the twin", () => {
   it("starts from the patient's resting values and age, and says when they are typical values", () => {
     expect(labPatient(result, twin)).toEqual({ hr: 70, sbp: 130, age: 66 });
     expect(labPatient(null, twin).age).toBe(58); // dataset median when age is unknown
-    expect(baselineText(result, twin, labPatient(result, twin))).toBe("Starts from this patient's pulse 70, BP 130, age 66");
+    expect(baselineText(result, twin, labPatient(result, twin))).toBe("Starts from the twin's pulse 70, BP 130, age 66");
     expect(baselineText(null, twin, labPatient(null, twin))).toMatch(/^Starts from typical values/);
     const imputed: TwinParams = { ...twin, notRecorded: new Set(["bp"]) };
     expect(baselineText(result, imputed, labPatient(result, imputed))).toMatch(/BP typical: not entered/);
