@@ -76,6 +76,7 @@ Independent checks of the production models. Re-run with `python verify_models.p
 | HDL 30 vs 55 mg/dL | CAD | -0.2 pts | + | **no** |
 | Triglycerides 250 vs 100 mg/dL | CAD | +7.9 pts | + | yes |
 | LDL 160 vs 90 mg/dL | CAD | -1.7 pts | + | **no** |
+| Weight 94 vs 55 kg (BMI follows) | CAD | -3.8 pts | + | **no** |
 | Regional wall-motion abnormality 2 vs 0 (LAD model) | LAD | +16.7 pts | + | yes |
 | Typical angina vs no chest pain (RCA model) | RCA | +17.3 pts | + | yes |
 | Diabetes vs none (RCA model) | RCA | +19.4 pts | + | yes |
@@ -85,6 +86,7 @@ Where the model disagrees with the textbook direction, the raw data (CAD rate in
 - By chest pain: typical 94% (n=164), atypical 43% (n=93), non-anginal 19% (n=16), none recorded 63% (n=30). Patients referred with no chest pain had other strong reasons for angiography, so 'atypical' is not riskier than 'none recorded' here.
 - By LDL (mg/dL): 0-100 73% (n=153), 100-130 68% (n=88), 130-400 73% (n=62). Flat: LDL carries no signal in this cohort, most likely because patients with known disease are already on lipid-lowering treatment.
 - By HDL (mg/dL): 0-40 76% (n=169), 40-50 63% (n=93), 50-200 71% (n=41). Weak and non-monotonic.
-- Consequence: the app's explanations may show LDL slightly lowering an estimate. That reflects the data, not physiology, and must not be read as advice.
+- By weight (kg): 0-65 76% (n=82), 65-80 71% (n=140), 80-200 68% (n=81). Lighter patients more often had CAD in this referral cohort, so the models learned an inverse link (the weight check recomputes BMI and the obesity flag, as the API does).
+- Consequence: the app's explanations may show LDL slightly lowering an estimate. That reflects the data, not physiology, and must not be read as advice. The what-if card therefore locks LDL, HDL and weight instead of offering them as sliders.
 
-_Run time 99 s._
+_Run time 104 s._

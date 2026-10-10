@@ -325,6 +325,13 @@
       "as_expected": false
     },
     {
+      "check": "Weight 94 vs 55 kg (BMI follows)",
+      "model": "cad",
+      "mean_change_pts": -3.8,
+      "expected": "+",
+      "as_expected": false
+    },
+    {
       "check": "Regional wall-motion abnormality 2 vs 0 (LAD model)",
       "model": "lad",
       "mean_change_pts": 16.7,
@@ -392,7 +399,21 @@
         0.71,
         41
       ]
+    },
+    "cad_rate_by_weight": {
+      "0-65": [
+        0.76,
+        82
+      ],
+      "65-80": [
+        0.71,
+        140
+      ],
+      "80-200": [
+        0.68,
+        81
+      ]
     }
   },
-  "seconds": 99
+  "seconds": 104
 }

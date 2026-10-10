@@ -225,6 +225,15 @@ def main():
                 b[{"atypical": "Atypical", "nonanginal": "Nonanginal"}[kind]] = "Y"
         return f
 
+    def weight(va, vb):
+        """Weight changed with BMI and the obesity flag (BMI >= 25) recomputed from height, as the API does."""
+        def f(a, b):
+            for d, w in ((a, va), (b, vb)):
+                d["Weight"] = w
+                d["BMI"] = w / (d["Length"] / 100) ** 2
+                d["Obesity"] = np.where(d["BMI"] >= 25, "Y", "N")
+        return f
+
     checks = [
         ("Typical angina vs no chest pain", "cad", chest("typical"), "+"),
         ("Atypical chest pain vs no chest pain", "cad", chest("atypical"), "+"),
@@ -241,6 +250,7 @@ def main():
         ("HDL 30 vs 55 mg/dL", "cad", setcol("HDL", 55, 30), "+"),
         ("Triglycerides 250 vs 100 mg/dL", "cad", setcol("TG", 100, 250), "+"),
         ("LDL 160 vs 90 mg/dL", "cad", setcol("LDL", 90, 160), "+"),
+        ("Weight 94 vs 55 kg (BMI follows)", "cad", weight(55, 94), "+"),
         ("Regional wall-motion abnormality 2 vs 0 (LAD model)", "lad", setcol("Region RWMA", 0, 2), "+"),
         ("Typical angina vs no chest pain (RCA model)", "rca", chest("typical"), "+"),
         ("Diabetes vs none (RCA model)", "rca", setcol("DM", 0, 1), "+"),
@@ -260,6 +270,7 @@ def main():
         "cad_rate_by_chest_pain": {k: rate(cp == k) for k in ("typical", "atypical", "non-anginal", "none recorded")},
         "cad_rate_by_ldl": {f"{lo}-{hi}": rate((df.LDL > lo) & (df.LDL <= hi)) for lo, hi in ((0, 100), (100, 130), (130, 400))},
         "cad_rate_by_hdl": {f"{lo}-{hi}": rate((df.HDL > lo) & (df.HDL <= hi)) for lo, hi in ((0, 40), (40, 50), (50, 200))},
+        "cad_rate_by_weight": {f"{lo}-{hi}": rate((df.Weight > lo) & (df.Weight <= hi)) for lo, hi in ((0, 65), (65, 80), (80, 200))},
     }
 
     R["seconds"] = round(time.time() - t0)
@@ -336,8 +347,11 @@ def write_report(R):
           f"- By LDL (mg/dL): {fmt(rr['cad_rate_by_ldl'])}. Flat: LDL carries no signal in this cohort, most "
           "likely because patients with known disease are already on lipid-lowering treatment.",
           f"- By HDL (mg/dL): {fmt(rr['cad_rate_by_hdl'])}. Weak and non-monotonic.",
+          f"- By weight (kg): {fmt(rr['cad_rate_by_weight'])}. Lighter patients more often had CAD in this referral "
+          "cohort, so the models learned an inverse link (the weight check recomputes BMI and the obesity flag, as the API does).",
           "- Consequence: the app's explanations may show LDL slightly lowering an estimate. That reflects the data, "
-          "not physiology, and must not be read as advice.", "",
+          "not physiology, and must not be read as advice. The what-if card therefore locks LDL, HDL and weight "
+          "instead of offering them as sliders.", "",
           f"_Run time {R['seconds']} s._", ""]
     OUT_MD.write_text("\n".join(L))
 
