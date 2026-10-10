@@ -86,8 +86,9 @@ def main():
         })
         print(f"{label:22} row={idx:3}  held-out={presets[-1]['oof_probabilities']}  truth={gt}")
 
-    with open(OUT_PATH, "w") as f:
-        json.dump(presets, f, indent=2)
+    # UTF-8 as written ("≥" stays readable), so a fresh run reproduces the committed file byte for byte.
+    with open(OUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(presets, f, indent=2, ensure_ascii=False)
     print(f"\nWrote {len(presets)} presets to {OUT_PATH}")
 
 
