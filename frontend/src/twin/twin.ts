@@ -53,7 +53,10 @@ const SOURCES: [string, keyof Omit<TwinParams, "notRecorded" | "lab">, string][]
 ];
 const BBB_CODES: TwinParams["bbb"][] = ["LBBB", "none", "RBBB"]; // label-encoded alphabetically: LBBB, N, RBBB
 
-/** The patient's recorded values, as the model saw them (typical values fill anything not entered). */
+/**
+ * The patient's recorded values, as the model saw them (the cohort median fills a measurement that was not
+ * entered, and a finding that was not entered counts as absent). `bpm` is the pulse before any estimate.
+ */
 export function twinFromResult(result: ExplainResponse | null, bpm: number): TwinParams {
   if (!result) return { ...DEFAULT_TWIN, hr: bpm, notRecorded: new Set() };
   const exp = result.explanations.cad;
@@ -67,8 +70,8 @@ export function twinFromResult(result: ExplainResponse | null, bpm: number): Twi
     const v = value(col);
     if (v === undefined) continue;
     if (field === "bbb") out.bbb = BBB_CODES[Math.round(v)] ?? "none";
-    else if (field === "ef" || field === "bp") out[field] = v;
-    else if (field !== "hr") out[field] = v >= 0.5;
+    else if (field === "ef" || field === "bp" || field === "hr") out[field] = v > 0 ? v : out[field];
+    else out[field] = v >= 0.5;
     if (imputed.has(schemaKey)) out.notRecorded.add(field);
   }
   return out;

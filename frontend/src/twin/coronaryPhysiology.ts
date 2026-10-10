@@ -37,8 +37,11 @@ const V_REST_CM_S = 8; // cross-sectional mean resting velocity (half the averag
 export const PA_MMHG = 100; // mean aortic pressure (fixed)
 const PV_MMHG = 0; // venous pressure (FFR simplification)
 export const CFR_NORMAL = 4; // normal coronary flow reserve at the reference demand (3–4 is normal)
-export const RPP_REF = 70 * 130; // reference rate-pressure product: dataset medians, pulse 70 × systolic BP 130
-export const AGE_DEFAULT = 58; // dataset median age, used when age is missing
+// Dataset medians (training cohort, /features): the lab's starting values when there is no estimate yet.
+export const HR_DEFAULT = 70; // pulse, bpm
+export const SBP_DEFAULT = 130; // systolic blood pressure, mmHg
+export const AGE_DEFAULT = 58; // years, also used when age is missing
+export const RPP_REF = HR_DEFAULT * SBP_DEFAULT; // reference rate-pressure product (the medians' 9,100)
 export const MAX_NARROWING = 0.95;
 
 /** Per-artery constants, looked up by registry id (adding an artery to the registry requires an entry). */
@@ -57,7 +60,7 @@ export const CASCADE = [
   { key: "perfusion", label: "Perfusion defect", threshold: 0.05, input: null },
   { key: "wallMotion", label: "Wall-motion abnormality", threshold: 0.15, input: "Region RWMA" },
   { key: "st", label: "ST depression", threshold: 0.25, input: "St Depression" },
-  { key: "angina", label: "Angina", threshold: 0.4, input: "Typical Chest Pain" },
+  { key: "angina", label: "Angina", threshold: 0.4, input: "Typical Chest Pain", note: "not always felt (silent ischaemia)" },
 ] as const;
 
 /** 0 = no ischaemia; 1..4 = the last cascade step reached. */

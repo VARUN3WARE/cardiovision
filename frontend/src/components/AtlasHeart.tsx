@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
 import { VesselLabel, useVesselMaterial, type ArteryProbs } from "./ArteryTube";
 import {
-  ATLAS_HEART_URL, ATLAS_SCALE, ATLAS_THORAX_URL, prepareAtlasHeart, prepareLabAnatomy, prepareThorax,
+  ATLAS_HEART_URL, ATLAS_SCALE, ATLAS_THORAX_URL, prepareAtlasHeart, prepareLabAnatomy, prepareLabAnatomyWhenIdle, prepareThorax,
   type AtlasBranch, type AtlasLabAnatomy, type AtlasPart, type LabMarker, type PreparedAtlasHeart,
 } from "./atlasAnatomy";
 import { FLOW_SPACING_MM, LAB, patchMaterial } from "./atlasMaterials";
@@ -16,6 +16,7 @@ import { NEUTRAL_ARTERY, fbm, riskColor } from "./heartAnatomy";
 import { RING_SIZE, TICK, heartClock, readTick, ventricularContraction, type BeatTiming, type TwinParams } from "../twin/twin";
 import { ARTERY_PHYSIOLOGY, LEFT_MAIN_DSVR, phasicMean, type LabState } from "../twin/coronaryPhysiology";
 import { useHeartMotion } from "../twin/useHeartMotion";
+import { whenIdle } from "../lab/idle";
 import { UNMODELLED, VESSEL, VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
 import { FlowAnchor, supportHull } from "../reasoning/anchors";
 
@@ -43,6 +44,15 @@ export interface AtlasLab {
   state: LabState;
 }
 
+/** The part of the canvas the lab leaves free for the heart (px from the canvas's top-left): the marker's label stays in it. */
+export interface LabFrame {
+  left: number;
+  right: number;
+  top: number;
+  /** How much the view is scaled down to fit there (the arteries' name tags shrink with it, to a point). */
+  scale: number;
+}
+
 interface Props {
   probs: ArteryProbs | null;
   selected: Vessel | null;
@@ -56,6 +66,10 @@ interface Props {
   lab?: AtlasLab | null;
   /** Camera direction per artery from which its sandbox marker is in sight (reported once the lab anatomy exists). */
   onLabViews?: (views: Record<Vessel, THREE.Vector3>) => void;
+  /** Where the sandbox marker's label may go (it flips below the ring near the top, and shifts sideways). */
+  labFrame?: LabFrame | null;
+  /** The render pipeline (HD effects on or off): the lab's shaders are compiled ahead for each one used. */
+  pipeline?: string;
   onSelect: (v: Vessel | null) => void;
   onHover: (v: Vessel | null) => void;
   onPick: (pick: AtlasPick | null) => void;
@@ -145,15 +159,25 @@ function useBvh(parts: AtlasPart[]) {
 
 /** BodyParts3D atlas heart: every coronary branch is a named FMA structure coloured by its vessel's model. */
 export default function AtlasHeart(props: Props) {
-  const { probs, selected, hovered, mode, xray, chest, twin, timing, lab = null, onLabViews, onSelect, onHover, onPick, onReady } = props;
+  const { probs, selected, hovered, mode, xray, chest, twin, timing, lab = null, onLabViews, labFrame = null, pipeline = "", onSelect, onHover, onPick, onReady } = props;
   const gltf = useGLTF(ATLAS_HEART_URL, false, true); // meshopt-compressed; decoder is bundled, no CDN
   const atlas = useMemo(() => prepareAtlasHeart(gltf.scene), [gltf.scene]);
   useBvh(atlas.parts);
   useLabAttributes(atlas);
   const labOn = lab !== null;
-  // Lab anatomy (ostium distances, markers, wall mapping) is computed the first time the lab opens.
+  // Lab anatomy (ostium distances, markers, wall mapping): prepared in idle time once the heart is shown, so the
+  // first open has no pause (prepareLabAnatomy finishes it at once if the lab opens first).
+  useEffect(() => prepareLabAnatomyWhenIdle(atlas), [atlas]);
   const labAnatomy = useMemo(() => (labOn ? prepareLabAnatomy(atlas) : null), [atlas, labOn]);
   const labMaterials = useLabMaterials(atlas);
+  // The lab's shader variants (flow pulses, see-through tissue, the marker band) are compiled in idle time too,
+  // for the render pipeline in use (they differ with the HD effects on or off).
+  const warmed = useRef(new Set<string>());
+  const [warming, setWarming] = useState<string | null>(null);
+  useEffect(() => {
+    if (labOn || warmed.current.has(pipeline)) return;
+    return whenIdle(() => setWarming(pipeline), 2500);
+  }, [pipeline, labOn]);
   useEffect(() => {
     if (labAnatomy) onLabViews?.(Object.fromEntries(VESSEL_IDS.map((v) => [v, labAnatomy.markers[v].view])) as Record<Vessel, THREE.Vector3>);
   }, [labAnatomy, onLabViews]);
@@ -261,11 +285,23 @@ export default function AtlasHeart(props: Props) {
                 selected={labOn ? lab.vessel : selected}
                 occluders={occluders}
                 onSelect={onSelect}
+                scale={labOn && labFrame ? Math.max(0.7, Math.min(1, labFrame.scale)) : 1}
               />
             );
           })}
           {lab && marker && (
-            <SandboxMarker marker={marker} narrowing={lab.state.narrowing} vessel={lab.vessel} occluders={occluders} />
+            <SandboxMarker marker={marker} narrowing={lab.state.narrowing} vessel={lab.vessel} wall={wallRef} frame={labFrame} />
+          )}
+          {warming === pipeline && !labOn && (
+            <LabWarmup
+              atlas={atlas}
+              flow={labMaterials}
+              at={pivots.vent}
+              onDone={() => {
+                warmed.current.add(pipeline);
+                setWarming(null);
+              }}
+            />
           )}
         </Pivoted>
         <Pivoted at={pivots.atr} innerRef={atr}>
@@ -419,20 +455,49 @@ function useFlowPulses(mats: ReturnType<typeof useLabMaterials>, lab: AtlasLab |
 /**
  * The SANDBOX narrowing: an amber ring on the chosen artery's proximal trunk (the vessel waist inside it is
  * drawn by the shader) with a label that says what it is. It follows a hypokinetic wall like the vessel.
+ *
+ * Band, ring and label show and hide together: hidden only while the ventricular wall stands well in front of
+ * the marker (more than 3 vessel radii: the groove the trunk runs in, the heartbeat or a frame's lag never
+ * count) for a few frames in a row, so it never flickers and never shows as a bare amber band. The label sits
+ * above the ring, or below it near the top of the free view, and shifts sideways to stay in that view.
  */
-function SandboxMarker({ marker, narrowing, vessel, occluders }: {
+function SandboxMarker({ marker, narrowing, vessel, wall, frame }: {
   marker: LabMarker;
   narrowing: number;
   vessel: Vessel;
-  occluders: RefObject<THREE.Object3D>[] | undefined;
+  /** The ventricular wall: in the lab (atria and great arteries see-through) the only thing that can hide the marker. */
+  wall: RefObject<THREE.Mesh>;
+  frame: LabFrame | null;
 }) {
   const group = useRef<THREE.Group>(null);
+  const band = useRef<THREE.Mesh>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const leader = useRef<HTMLDivElement>(null);
+  const tag = useRef<HTMLDivElement | null>(null);
+  const tagWidth = useRef(0);
+  const live = useRef(frame);
+  live.current = frame;
+  const vis = useRef({ shown: true, run: 0, below: false, shift: 0 });
   const quaternion = useMemo(
     () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), marker.tangent),
     [marker],
   );
   const local = useMemo(() => new THREE.Vector3(), []);
-  useFrame(() => {
+  // The label's width (for the sideways shift), measured after layout rather than read every frame.
+  const observer = useMemo(() => (typeof ResizeObserver === "undefined" ? null : new ResizeObserver((entries) => {
+    for (const e of entries) tagWidth.current = (e.target as HTMLElement).offsetWidth;
+  })), []);
+  useEffect(() => () => observer?.disconnect(), [observer]);
+  const tagRef = (el: HTMLDivElement | null) => {
+    if (tag.current && tag.current !== el) observer?.unobserve(tag.current);
+    tag.current = el;
+    if (el) {
+      tagWidth.current = el.offsetWidth;
+      observer?.observe(el);
+    }
+  };
+
+  useFrame(({ camera, size }) => {
     const g = group.current;
     if (!g) return;
     // Same local scale as the shader at the marker (its territory weight is that of the trunk there, ~1).
@@ -440,27 +505,134 @@ function SandboxMarker({ marker, narrowing, vessel, occluders }: {
     const c = Math.min(1, Math.max(0, LAB.uLabHypo.value));
     local.set(1 - (1 - S.x) * (1 - c), 1 - (1 - S.y) * (1 - c), 1 - (1 - S.z) * (1 - c)).divide(S);
     g.position.copy(marker.position).sub(LAB.uLabPivot.value).multiply(local).add(LAB.uLabPivot.value);
+
+    g.updateWorldMatrix(true, false);
+    _markerPos.setFromMatrixPosition(g.matrixWorld);
+    const w = wall.current;
+    let blocked = false;
+    if (w) {
+      w.updateWorldMatrix(true, false); // this frame's squeeze, like the marker
+      _markerDir.copy(_markerPos).sub(camera.position);
+      const dist = _markerDir.length();
+      const tolerance = 3 * marker.radius * _markerScale.setFromMatrixScale(g.matrixWorld).x;
+      _markerRay.set(camera.position, _markerDir.divideScalar(dist));
+      _markerRay.far = Math.max(0, dist - tolerance);
+      blocked = _markerRay.intersectObject(w, false).length > 0; // no hits in X-ray (the wall is not pickable)
+    }
+    const v = vis.current;
+    if (blocked === v.shown) {
+      // The other state must persist (hide after 6 frames, show again after 3) before anything changes.
+      v.run++;
+      if (v.run >= (v.shown ? 6 : 3)) {
+        v.shown = !v.shown;
+        v.run = 0;
+        if (band.current) band.current.visible = v.shown;
+        if (box.current) box.current.style.visibility = v.shown ? "" : "hidden";
+      }
+    } else v.run = 0;
+
+    const f = live.current;
+    if (!f || !tag.current || !leader.current) return;
+    _markerNdc.copy(_markerPos).project(camera);
+    const x = ((_markerNdc.x + 1) / 2) * size.width;
+    const y = ((1 - _markerNdc.y) / 2) * size.height;
+    // Ring radius 14 px, leader 16 px, label about 20 px: flip below when the label would reach the top.
+    const below = v.below ? y - 66 < f.top : y - 56 < f.top;
+    const half = tagWidth.current / 2;
+    const lo = f.left + 6 - (x - half), hi = f.right - 6 - (x + half);
+    const shift = Math.round(lo > 0 ? lo : hi < 0 ? Math.max(hi, lo) : 0);
+    if (below !== v.below) {
+      v.below = below;
+      leader.current.style.top = below ? "100%" : "";
+      leader.current.style.bottom = below ? "auto" : "";
+      tag.current.style.top = below ? "calc(100% + 16px)" : "";
+      tag.current.style.bottom = below ? "auto" : "";
+    }
+    if (shift !== v.shift) {
+      v.shift = shift;
+      tag.current.style.transform = `translateX(calc(-50% + ${shift}px))`;
+    }
   });
   const r = marker.radius;
   return (
     <group ref={group} position={marker.position}>
       {/* A band round the vessel (the waist inside it is drawn by the vessel shader)... */}
-      <mesh quaternion={quaternion} raycast={() => null} renderOrder={5}>
+      <mesh ref={band} quaternion={quaternion} raycast={() => null} renderOrder={5}>
         <torusGeometry args={[r * 2.4, r * 0.38, 10, 40]} />
         <meshBasicMaterial color={LAB_MARKER_COLOR} toneMapped={false} />
       </mesh>
-      {/* ...and a screen-space ring with its label, so it reads at any zoom (hidden when the heart is in the way). */}
-      <Html center zIndexRange={[16, 12]} occlude={occluders} style={{ pointerEvents: "none" }}>
-        <div className="relative h-7 w-7">
+      {/* ...and a screen-space ring with its label, so it reads at any zoom. */}
+      <Html center zIndexRange={[16, 12]} style={{ pointerEvents: "none" }}>
+        <div ref={box} className="relative h-7 w-7">
           <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.85)]" />
-          <div className="absolute bottom-full left-1/2 h-4 w-0 -translate-x-1/2 border-l-[1.5px] border-amber-400" />
-          <div className="absolute bottom-[calc(100%+16px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-amber-400 bg-amber-950/90 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-amber-100 shadow">
+          <div ref={leader} className="absolute bottom-full left-1/2 h-4 w-0 -translate-x-1/2 border-l-[1.5px] border-amber-400" />
+          <div
+            ref={tagRef}
+            className="absolute bottom-[calc(100%+16px)] left-1/2 whitespace-nowrap rounded border border-amber-400 bg-amber-950/90 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-amber-100 shadow"
+            style={{ transform: "translateX(-50%)" }}
+          >
             SANDBOX narrowing {Math.round(narrowing * 100)}% <span className="font-normal text-amber-300">· {label(vessel)}</span>
           </div>
         </div>
       </Html>
     </group>
   );
+}
+const _markerPos = new THREE.Vector3();
+const _markerDir = new THREE.Vector3();
+const _markerNdc = new THREE.Vector3();
+const _markerScale = new THREE.Vector3();
+const _markerRay = Object.assign(new THREE.Raycaster(), { firstHitOnly: true });
+
+/**
+ * Draws the lab's shader variants once, tiny and inside the heart, so they are compiled while the user is not
+ * waiting (the first lab open then has nothing to compile): the flow-pulse material, the see-through tissue
+ * the lab shows the atria and great arteries with, and the marker band. Unmounts itself after two frames; its
+ * own materials stay alive (disposing them could release the shared programs).
+ */
+function LabWarmup({ atlas, flow, at, onDone }: {
+  atlas: PreparedAtlasHeart;
+  flow: ReturnType<typeof useLabMaterials>;
+  at: THREE.Vector3;
+  onDone: () => void;
+}) {
+  const frames = useRef(0);
+  const items = useMemo(() => {
+    const coronary = atlas.parts.find((p) => p.layer === "coronary");
+    const atria = atlas.parts.find((p) => p.key === "atria");
+    const out: { geometry: THREE.BufferGeometry; material: THREE.Material }[] = [];
+    if (coronary && flow.byPart[coronary.key]) out.push({ geometry: coronary.geometry, material: flow.byPart[coronary.key] });
+    if (atria) out.push({ geometry: atria.geometry, material: warmupMaterials().tissue });
+    out.push({ geometry: warmupMaterials().bandGeometry, material: warmupMaterials().band });
+    return out;
+  }, [atlas, flow]);
+  useFrame(() => {
+    frames.current += 1;
+    if (frames.current === 3) onDone();
+  });
+  return (
+    <group position={at} scale={1e-4}>
+      {items.map((it, i) => (
+        <mesh key={i} geometry={it.geometry} material={it.material} frustumCulled={false} raycast={() => null} />
+      ))}
+    </group>
+  );
+}
+
+let warmup: { tissue: THREE.Material; band: THREE.Material; bandGeometry: THREE.BufferGeometry } | null = null;
+function warmupMaterials() {
+  if (!warmup) {
+    const tissue = tissueMaterial("#7d302b", false);
+    tissue.transparent = true; // as useXray sets it in the lab (and in X-ray mode)
+    tissue.opacity = 0.4;
+    tissue.depthWrite = false;
+    warmup = {
+      tissue,
+      band: new THREE.MeshBasicMaterial({ color: LAB_MARKER_COLOR, toneMapped: false }),
+      bandGeometry: new THREE.TorusGeometry(1, 0.2, 6, 12),
+    };
+  }
+  return warmup;
 }
 
 interface WallProps {
@@ -563,11 +735,9 @@ function Wall({ part, atlas, meshRef, probs, selected, focus, mode, xray, lab, o
   );
 }
 
-/** Atria and great vessels: opaque tissue that swallows clicks (so vessels behind can't be picked through it). */
-function Tissue({ part, color, xray, sheen, meshRef }: {
-  part: AtlasPart; color: string; xray: boolean; sheen?: boolean; meshRef?: RefObject<THREE.Mesh>;
-}) {
-  const material = useMemo(() => patchMaterial(new THREE.MeshPhysicalMaterial({
+/** Material of the atria and great vessels (also built, see-through, by LabWarmup to compile that variant early). */
+function tissueMaterial(color: string, sheen: boolean) {
+  return patchMaterial(new THREE.MeshPhysicalMaterial({
     color,
     roughness: 0.45,
     clearcoat: 0.8,
@@ -576,7 +746,14 @@ function Tissue({ part, color, xray, sheen, meshRef }: {
     sheenRoughness: 0.5,
     sheenColor: new THREE.Color(sheen ? "#ffb0a0" : "#ff6650"),
     side: THREE.DoubleSide,
-  }), { bump: { freq: 200, strength: 0.6 }, fresnel: XRAY_FRESNEL }), [color, sheen]);
+  }), { bump: { freq: 200, strength: 0.6 }, fresnel: XRAY_FRESNEL });
+}
+
+/** Atria and great vessels: opaque tissue that swallows clicks (so vessels behind can't be picked through it). */
+function Tissue({ part, color, xray, sheen, meshRef }: {
+  part: AtlasPart; color: string; xray: boolean; sheen?: boolean; meshRef?: RefObject<THREE.Mesh>;
+}) {
+  const material = useMemo(() => tissueMaterial(color, !!sheen), [color, sheen]);
   useXray(material, xray, 0.4);
   const tip = useTip((e) => {
     const b = branchName(part, e);

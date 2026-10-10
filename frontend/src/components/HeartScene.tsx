@@ -6,7 +6,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
-import AtlasHeart, { type AtlasLab, type AtlasPick, type ChestLayers } from "./AtlasHeart";
+import AtlasHeart, { type AtlasLab, type AtlasPick, type ChestLayers, type LabFrame } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
 import VesselInspector, { VesselChip } from "./VesselInspector";
 import EcgMonitor from "../twin/EcgMonitor";
@@ -21,6 +21,7 @@ import { FlowAnchor, supportHull } from "../reasoning/anchors";
 import LabPanel, { LabBanner, LabLegend } from "../lab/LabPanel";
 import { LAB_DEFAULT, baselineText, labFromQuery, labPatient, labTwin, type LabSettings } from "../lab/labState";
 import { labState } from "../twin/coronaryPhysiology";
+import { whenIdle } from "../lab/idle";
 import type { ExplainResponse, FeaturesResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
@@ -40,9 +41,11 @@ const HEART_ROTATION = new THREE.Euler(-0.25, -0.35, 0.62);
 const DEFAULT_VIEW = new THREE.Vector3(0, 0.015, 1);
 const HEART_DISTANCE = 6.8;
 const CHEST_DISTANCE = 21;
-// Ischaemia lab panel: docked at the right when the 3D view is wide enough, else a sheet at the bottom.
+// Ischaemia lab panel: docked at the right when the 3D view is wide enough, else a sheet at the bottom (at most
+// ~40% of the view's height, collapsible).
 const LAB_PANEL_W = 262;
 const LAB_SIDE_MIN_W = 600;
+const LAB_SHEET_MAX = "42%";
 
 /** Standard anatomical views. World frame: +X patient's left, +Y superior, +Z anterior. */
 const ANATOMICAL_VIEWS: { key: string; title: string; dir: [number, number, number] }[] = [
@@ -146,6 +149,11 @@ export default function HeartScene({
   const [layers, setLayers] = useState<ChestLayers>({ skin: true, skeleton: true, organs: true });
   const [layerMenu, setLayerMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
+  const [labCollapsed, setLabCollapsed] = useState(false);
+  // The shadow under the heart is drawn only without the chest: its shaders are compiled ahead, in idle time while
+  // the chest is shown, so hiding the chest (or opening the lab) has nothing to compile.
+  const [shadowWarm, setShadowWarm] = useState(false);
+  const shadowWarmed = useRef(false);
   const [xray, setXray] = useState(false);
   const [pick, setPick] = useState<AtlasPick | null>(null);
   const [view, setView] = useState<{ dir: THREE.Vector3; n: number } | null>(null);
@@ -167,7 +175,8 @@ export default function HeartScene({
   const legendRef = useRef<HTMLDivElement>(null);
   const viewsRef = useRef<HTMLDivElement>(null);
   const creditRef = useRef<HTMLDivElement>(null);
-  const overlay = useOverlayLayout(viewRef, toolbarRef, noticesRef, [legendRef, viewsRef, creditRef]);
+  const labBannerRef = useRef<HTMLDivElement>(null);
+  const overlay = useOverlayLayout(viewRef, toolbarRef, noticesRef, [legendRef, viewsRef, creditRef], labBannerRef);
 
   useEffect(() => {
     specimenAvailable().then(setAvailable);
@@ -194,13 +203,21 @@ export default function HeartScene({
     if (m === "atlas" && chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
   };
   const showPick = pick && (pick.vessel === "lm" || pick.vessel === selected) ? pick : null;
+  useEffect(() => {
+    if (!showChest || !ready || shadowWarmed.current) return;
+    return whenIdle(() => {
+      shadowWarmed.current = true;
+      setShadowWarm(true);
+    }, 3000);
+  }, [showChest, ready]);
   // Function twin: the patient's recorded pulse, EF, blood pressure and ECG findings drive the heart (also while
   // a what-if scenario colours the arteries: the heartbeat and ECG never show hypothetical inputs).
   const twin = useMemo(() => twinFromResult(patient, bpm), [patient, bpm]);
-  // Ischaemia lab: the patient's resting pulse, systolic BP and age plus a generic sandbox narrowing. While it
-  // runs, the twin beats at the lab's exercise rate and the monitor shows the lab's ST depression (marked "lab").
+  // Ischaemia lab: the patient's recorded resting pulse, systolic BP and age plus a generic sandbox narrowing.
+  // While it runs, the twin beats at the lab's exercise rate and the monitor shows the lab's ST depression
+  // (marked "lab").
   const labActive = labOn && useAtlas;
-  const labIn = useMemo(() => labPatient(patient, twin), [patient, twin]);
+  const labIn = useMemo(() => labPatient(patient), [patient]);
   const lab = useMemo(
     () => (labActive ? labState(labSettings.vessel, labSettings.narrowing / 100, labSettings.exercise, labIn) : null),
     [labActive, labSettings, labIn],
@@ -212,6 +229,8 @@ export default function HeartScene({
   // Narrow 3D view (e.g. 1024 px windows): tighter toolbar, with X-ray, HD and Reset in a "⋯" menu, and the
   // reasoning view's data types as chips above and below the heart.
   const compact = viewWidth > 0 && viewWidth < 520;
+  // The standard-view buttons live in the "⋯" menu on narrow views and while the lab uses the view's corners.
+  const viewsInMenu = compact || labActive;
   // Too narrow for the full vessel card beside the heart: a one-line chip until "details" is clicked.
   const narrowCard = viewWidth > 0 && viewWidth < 420;
   const pad = compact ? "px-1.5" : "px-2";
@@ -307,6 +326,48 @@ export default function HeartScene({
     </a>
   ) : null;
 
+  // Ischaemia lab panel, docked at the side or as a bottom sheet (the sheet carries the model credit at its end).
+  const labPanel = (layout: "side" | "sheet") => lab && (
+    <LabPanel
+      settings={labSettings}
+      onChange={setLabSettings}
+      state={lab}
+      patient={labIn}
+      baseline={baselineText(patient, labIn, whatIf)}
+      stReadable={twin.bbb !== "LBBB"}
+      onClose={closeLab}
+      layout={layout}
+      collapsed={labCollapsed}
+      onCollapse={setLabCollapsed}
+      footer={layout === "sheet" ? credit : undefined}
+      className={layout === "side" ? "absolute bottom-3 right-3 z-20" : "min-h-0"}
+      style={layout === "side" ? { width: LAB_PANEL_W, top: overlay.toolbar + 6 } : undefined}
+    />
+  );
+  // The lab keeps the heart (and its sandbox marker) in the part of the view its panel, banner and legend leave
+  // free: the rendered view is shifted, and scaled down just enough, to fit there.
+  const labFree = useMemo(() => {
+    if (!labActive || !viewWidth || !viewHeight) return null;
+    const top = Math.max(overlay.toolbar, overlay.notices?.bottom ?? 0, overlay.extraTop) + 8;
+    const bottom = viewHeight - overlay.legend - 6;
+    const right = labSide ? viewWidth - (LAB_PANEL_W + 24) : viewWidth;
+    return { left: 0, right, top, bottom };
+  }, [labActive, labSide, viewWidth, viewHeight, overlay]);
+  const labFit = useMemo(() => {
+    if (!labFree) return null;
+    const { right, top, bottom } = labFree;
+    // At the camera's fit distance the heart spans about 56% of the view's height (less on narrow views, where
+    // FitCamera pulls back); leave ~44 px above it for the marker's label.
+    const heart = (0.56 * viewHeight) / Math.min(1.4, Math.max(1, 0.8 / (viewWidth / viewHeight)));
+    const scale = Math.max(0.35, Math.min(1, (bottom - top - 44) / heart, (right - 16) / heart));
+    const cy = Math.min((top + bottom) / 2 + 18, bottom - 4 - (heart * scale) / 2);
+    return { cx: right / 2, cy, s: scale };
+  }, [labFree, viewWidth, viewHeight]);
+  const labFrame = useMemo<LabFrame | null>(
+    () => (labFree && labFit ? { left: labFree.left, right: labFree.right, top: labFree.top, scale: labFit.s } : null),
+    [labFree, labFit],
+  );
+
   const xrayButton = useAtlas && (
     <button
       onClick={() => setXray((x) => !x)}
@@ -339,10 +400,16 @@ export default function HeartScene({
   const resetButton = (
     <button
       onClick={() => {
+        // In the lab: back to the view that shows the sandbox marker (the patient's selection is left alone).
+        if (labActive && labViews) {
+          setView((cur) => ({ dir: labViews[labSettings.vessel].clone(), n: (cur?.n ?? 0) + 1 }));
+          return;
+        }
         onSelect(null);
         setResetKey((k) => k + 1);
       }}
       className={`rounded bg-slate-900/80 ${pad} py-1 text-gray-300 hover:bg-slate-700`}
+      title={labActive ? "Back to the view of the sandbox narrowing" : "Front view, nothing selected"}
     >
       Reset
     </button>
@@ -384,6 +451,8 @@ export default function HeartScene({
                   timing={timing}
                   lab={atlasLab}
                   onLabViews={setLabViews}
+                  labFrame={labFrame}
+                  pipeline={fx ? "hd" : "plain"}
                   onSelect={select}
                   onHover={setHovered}
                   onPick={setPick}
@@ -427,6 +496,7 @@ export default function HeartScene({
           // Rendered once per model (the heartbeat barely moves the shadow), not every frame.
           <ContactShadows key={`${model}-${ready}`} frames={1} position={[0, -1.85, 0]} opacity={0.6} scale={7} blur={2.6} far={3.5} resolution={512} />
         )}
+        {showChest && shadowWarm && <ShadowWarmup onDone={() => setShadowWarm(false)} />}
 
         {/* Turn HD off by itself if frames stay below ~24 fps (ignored while the page is hidden). */}
         <PerformanceMonitor
@@ -463,12 +533,8 @@ export default function HeartScene({
         <FirstFrame onReady={() => setFramesReady(true)} />
         {import.meta.env.DEV && <DevHook />}
         <FitCamera />
-        {/* Lab: keep the heart centred in the part of the view the panel leaves free (left of the side panel, or
-            between the toolbar, ~3 rows, and the bottom sheet, 52% of the height). */}
-        <ViewShift
-          x={labActive && labSide ? (LAB_PANEL_W + 12) / 2 : 0}
-          y={labActive && !labSide && viewHeight ? Math.max(0, 0.26 - 48 / viewHeight) : 0}
-        />
+        {/* Lab: the heart in the part of the view the panel, banner and legend leave free. */}
+        <ViewShift fit={labFit} />
         <CameraRig
           focus={selected}
           resetKey={resetKey}
@@ -503,15 +569,22 @@ export default function HeartScene({
             ))}
           </div>
         )}
-        {(["arteries", "territories"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded ${pad} py-1 ${mode === m ? "bg-red-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
-          >
-            {m === "arteries" ? "Arteries" : "Territories"}
-          </button>
-        ))}
+        {(["arteries", "territories"] as const).map((m) => {
+          // The lab shades its own artery's territory: the risk-coloured territories come back when it closes.
+          const off = labActive && m === "territories";
+          const on = labActive ? m === "arteries" : mode === m;
+          return (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              disabled={off}
+              title={off ? "Not in the lab: it shades the sandbox artery's territory itself" : undefined}
+              className={`rounded ${pad} py-1 ${on ? "bg-red-700 text-white" : off ? "cursor-not-allowed bg-slate-900/60 text-gray-500" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
+            >
+              {m === "arteries" ? "Arteries" : "Territories"}
+            </button>
+          );
+        })}
         {useAtlas && (
           <>
             <button
@@ -573,9 +646,9 @@ export default function HeartScene({
         <button
           onClick={() => setBeating((b) => !b)}
           className={`rounded bg-slate-900/80 ${pad} py-1 text-gray-300 hover:bg-slate-700`}
-          title={lab ? "Toggle heartbeat animation (rate set by the lab's exercise slider)" : "Toggle heartbeat animation (rate = patient pulse)"}
+          title={lab ? "Toggle heartbeat animation (rate set by the lab's exercise slider)" : "Toggle heartbeat animation (rate = the patient's recorded pulse)"}
         >
-          {beating ? `♥ ${lab ? Math.round(lab.hr) : bpm}` : "♡ paused"}
+          {beating ? `♥ ${Math.round(shownTwin.hr)}` : "♡ paused"}
         </button>
         <button
           onClick={() => setShowEcg((e) => !e)}
@@ -603,13 +676,15 @@ export default function HeartScene({
             Lab
           </button>
         )}
-        {compact ? (
+        {!compact && hdButton}
+        {!compact && resetButton}
+        {viewsInMenu && (
           <div className="relative">
             <button
               onClick={() => setMoreMenu((m) => !m)}
               aria-expanded={moreMenu}
               aria-label="More view controls"
-              title={useAtlas ? "Standard views, X-ray, HD and Reset" : "Standard views, HD and Reset"}
+              title={compact ? (useAtlas ? "Standard views, X-ray, HD and Reset" : "Standard views, HD and Reset") : "Standard views"}
               className="rounded bg-slate-900/80 px-1.5 py-1 text-gray-300 hover:bg-slate-700"
             >
               ⋯
@@ -617,29 +692,26 @@ export default function HeartScene({
             {moreMenu && (
               <div className="absolute right-0 top-7 z-20 flex flex-col gap-1 rounded bg-slate-900/95 p-1.5 shadow-lg" onMouseLeave={() => setMoreMenu(false)}>
                 <div role="group" aria-label="Standard views" className="grid grid-cols-3 gap-0.5">{viewButtons}</div>
-                {xrayButton}
-                {hdButton}
-                {resetButton}
+                {compact && xrayButton}
+                {compact && hdButton}
+                {compact && resetButton}
               </div>
             )}
           </div>
-        ) : (
-          <>
-            {hdButton}
-            {resetButton}
-          </>
         )}
       </div>
 
-      {/* Notices under the toolbar, stacked in one centred column so they never cover it or each other. */}
+      {/* Notices under the toolbar, stacked in one centred column so they never cover it or each other (beside the
+          docked lab panel while the lab is on). */}
       <div
         ref={noticesRef}
-        className="pointer-events-none absolute inset-x-3 z-10 flex flex-col items-center gap-1"
-        style={{ top: overlay.toolbar + 6 }}
+        className="pointer-events-none absolute left-3 z-10 flex flex-col items-center gap-1"
+        style={{ top: overlay.toolbar + 6, right: labActive && labSide ? LAB_PANEL_W + 24 : 12 }}
       >
         {pending && probs && (
-          <div role="status" className="rounded bg-amber-950/90 px-2 py-1 text-[10px] text-amber-200">
-            Inputs changed: colours show the previous estimate
+          <div role="status" className="rounded bg-amber-950/90 px-2 py-1 text-center text-[10px] text-amber-200">
+            {/* In the lab the arteries show the sandbox, so only its starting values can be out of date. */}
+            {labActive ? "Inputs changed: the lab starts from the last estimate's values" : "Inputs changed: colours show the previous estimate"}
           </div>
         )}
         {whatIf && !labActive && (
@@ -675,37 +747,35 @@ export default function HeartScene({
         )}
       </div>
 
-      {labActive && (
-        <>
-          {labSide && (
-            <LabBanner
-              className="absolute z-20 max-w-[min(92%,440px)] -translate-x-1/2"
-              style={{ left: `calc((100% - ${LAB_PANEL_W + 12}px) / 2)`, top: belowNotices }}
-            />
-          )}
-          {lab && (
-            <LabPanel
-              settings={labSettings}
-              onChange={setLabSettings}
-              state={lab}
-              patient={labIn}
-              baseline={baselineText(patient, twin, labIn)}
-              stReadable={twin.bbb !== "LBBB"}
-              onClose={closeLab}
-              className={labSide ? "absolute bottom-3 right-3 z-20" : "absolute inset-x-2 bottom-2 z-20 max-h-[52%]"}
-              style={labSide ? { width: LAB_PANEL_W, top: overlay.toolbar + 6 } : undefined}
-              banner={!labSide}
-            />
-          )}
-        </>
+      {labActive && lab && (
+        labSide ? (
+          <>
+            {/* The sandbox banner over the heart, in the part of the view the panel leaves free (wraps there). */}
+            <div className="pointer-events-none absolute left-3 z-20 flex justify-center" style={{ right: LAB_PANEL_W + 24, top: belowNotices }}>
+              <div ref={labBannerRef} className="max-w-[440px]">
+                <LabBanner />
+              </div>
+            </div>
+            {labPanel("side")}
+            <div ref={legendRef} className="absolute bottom-3 left-3 z-20 w-64" style={{ maxWidth: viewWidth - LAB_PANEL_W - 36 }}>
+              <LabLegend>{credit}</LabLegend>
+            </div>
+          </>
+        ) : (
+          // Bottom sheet: a one-line legend over the sheet, which leads with the cascade (credit at its end).
+          <div ref={legendRef} className="absolute inset-x-2 bottom-2 z-20 flex flex-col gap-1" style={{ maxHeight: LAB_SHEET_MAX }}>
+            <LabLegend line />
+            {labPanel("sheet")}
+          </div>
+        )
       )}
 
-      {/* Anatomical view buttons (in the "⋯" menu in narrow views) */}
-      {!compact && (
+      {/* Anatomical view buttons (in the "⋯" menu in narrow views and in the lab) */}
+      {!viewsInMenu && (
         <div
           ref={viewsRef}
           className="absolute bottom-12 right-3 z-20 grid grid-cols-3 gap-0.5"
-          style={labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 1.75rem)" }) : stackViews ? { bottom: overlay.legend + 6 } : undefined}
+          style={stackViews ? { bottom: overlay.legend + 6 } : undefined}
           role="group"
           aria-label="Standard views"
         >
@@ -742,25 +812,16 @@ export default function HeartScene({
         </div>
       )}
 
-      {credit && !creditInLegend && (
-        <div
-          ref={creditRef}
-          className={`absolute bottom-3 right-3 ${useAtlas ? "max-w-[240px]" : "max-w-[220px]"} text-right`}
-          style={useAtlas && labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 0.5rem)" }) : undefined}
-        >
+      {/* Model credit, bottom right (inside the legend on narrow views and in the lab). */}
+      {credit && !creditInLegend && !labActive && (
+        <div ref={creditRef} className={`absolute bottom-3 right-3 ${useAtlas ? "max-w-[240px]" : "max-w-[220px]"} text-right`}>
           {credit}
         </div>
       )}
 
-      {/* Legend (the lab has its own: its arteries show the sandbox, not the estimates). While the reasoning view
-          (or a narrow view's vessel card) needs the room, only the band scale. */}
-      {labActive ? (
-        labSide && (
-          <div ref={legendRef} className="absolute bottom-3 left-3 z-20 w-56">
-            <LabLegend />
-          </div>
-        )
-      ) : (
+      {/* Legend (the lab has its own, above: its arteries show the sandbox, not the estimates). While the reasoning
+          view (or a narrow view's vessel card) needs the room, only the band scale. */}
+      {labActive ? null : (
       <div
         ref={legendRef}
         className={`absolute bottom-3 left-3 z-20 ${legendCollapsed ? "w-52" : "w-60"} max-w-[calc(100%-1.5rem)] text-[10px] text-gray-400`}
@@ -834,6 +895,19 @@ function DevHook() {
   return null;
 }
 
+/**
+ * Draws an invisible contact shadow for a few frames (its depth and blur shaders then stay compiled: drei keeps
+ * those materials), then reports done.
+ */
+function ShadowWarmup({ onDone }: { onDone: () => void }) {
+  const frames = useRef(0);
+  useFrame(() => {
+    frames.current += 1;
+    if (frames.current === 3) onDone();
+  });
+  return <ContactShadows frames={1} position={[0, -1.85, 0]} opacity={0} scale={7} blur={2.6} far={3.5} resolution={64} />;
+}
+
 /** Reports once the first frame (and so shader compilation) has completed. */
 function FirstFrame({ onReady }: { onReady: () => void }) {
   const frames = useRef(0);
@@ -845,16 +919,23 @@ function FirstFrame({ onReady }: { onReady: () => void }) {
 }
 
 /**
- * Shift the rendered view (not the camera) so the heart sits in the part of the canvas an overlay leaves
- * free: x pixels to the left, y × the canvas height upwards. Labels and picking follow the same projection.
+ * Shift and scale the rendered view (not the camera) so the heart sits in the part of the canvas the overlays
+ * leave free: what is normally drawn at the canvas centre is drawn at (cx, cy) px, everything s times as large.
+ * Labels and picking follow the same projection.
  */
-function ViewShift({ x, y }: { x: number; y: number }) {
+function ViewShift({ fit }: { fit: { cx: number; cy: number; s: number } | null }) {
   const { camera, size } = useThree();
+  const cx = fit?.cx ?? 0, cy = fit?.cy ?? 0, s = fit?.s ?? 1;
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera;
-    if ((!x && !y) || !size.width || !size.height) cam.clearViewOffset();
-    else cam.setViewOffset(size.width, size.height, x, y * size.height, size.width, size.height);
-  }, [camera, size.width, size.height, x, y]);
+    if (!fit || !size.width || !size.height) {
+      cam.clearViewOffset();
+      return;
+    }
+    const w = size.width * s, h = size.height * s;
+    cam.setViewOffset(w, h, w / 2 - cx, h / 2 - cy, size.width, size.height);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera, size.width, size.height, fit !== null, cx, cy, s]);
   useEffect(() => () => (camera as THREE.PerspectiveCamera).clearViewOffset(), [camera]);
   return null;
 }
@@ -877,6 +958,8 @@ function useElementSize(ref: RefObject<HTMLElement>) {
 interface OverlayLayout {
   /** Bottom of the toolbar (px from the top of the 3D view). */
   toolbar: number;
+  /** Bottom of an extra overlay under the toolbar (the lab's sandbox banner beside its panel), else 0. */
+  extraTop: number;
   /** The centred notices column, when it shows anything. */
   notices: OverlayRect | null;
   /** Overlays along the bottom edge: legend, view buttons, credit line. */
@@ -900,8 +983,9 @@ function useOverlayLayout(
   toolbar: RefObject<HTMLElement>,
   notices: RefObject<HTMLElement>,
   bottomRefs: RefObject<HTMLElement>[],
+  extra: RefObject<HTMLElement>,
 ): OverlayLayout {
-  const [layout, setLayout] = useState<OverlayLayout>({ toolbar: 64, notices: null, bottoms: [], legend: 0, views: 0 });
+  const [layout, setLayout] = useState<OverlayLayout>({ toolbar: 64, extraTop: 0, notices: null, bottoms: [], legend: 0, views: 0 });
   const read = useCallback(() => {
     const v = view.current;
     if (!v) return;
@@ -918,8 +1002,11 @@ function useOverlayLayout(
     }
     const rects = bottomRefs.map((r) => rectOf(r.current));
     const [legendRect, viewsRect] = rects;
+    const x = extra.current;
+    const vr = v.getBoundingClientRect();
     const next: OverlayLayout = {
       toolbar: t ? t.offsetTop + t.offsetHeight : 0,
+      extraTop: x && x.offsetHeight > 0 ? Math.round(x.getBoundingClientRect().bottom - vr.top) : 0,
       notices: box,
       bottoms: rects.filter((r): r is OverlayRect => r !== null),
       legend: legendRect ? H - legendRect.top : 0,
@@ -927,15 +1014,22 @@ function useOverlayLayout(
     };
     setLayout((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, toolbar, notices, ...bottomRefs]);
-  useLayoutEffect(() => read());
-  useEffect(() => {
+  }, [view, toolbar, notices, extra, ...bottomRefs]);
+  // Re-read after every render, and on any resize of the overlays (which come and go with the lab, the reasoning
+  // view and the story): one observer, re-pointed whenever the set of elements changes.
+  const observer = useRef<ResizeObserver | null>(null);
+  const observed = useRef<(HTMLElement | null)[]>([]);
+  useLayoutEffect(() => {
+    read();
     if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => read());
-    for (const r of [view, toolbar, notices, ...bottomRefs]) if (r.current) ro.observe(r.current);
-    return () => ro.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [read, view, toolbar, notices, ...bottomRefs]);
+    observer.current ??= new ResizeObserver(() => read());
+    const els = [view, toolbar, notices, extra, ...bottomRefs].map((r) => r.current);
+    if (els.length === observed.current.length && els.every((e, i) => e === observed.current[i])) return;
+    observer.current.disconnect();
+    for (const e of els) if (e) observer.current.observe(e);
+    observed.current = els;
+  });
+  useEffect(() => () => observer.current?.disconnect(), []);
   return layout;
 }
 

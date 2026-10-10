@@ -10,6 +10,7 @@
 import * as THREE from "three";
 import { acceleratedRaycast } from "three-mesh-bvh";
 import { VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
+import { whenIdle } from "../lab/idle";
 
 export const ATLAS_HEART_URL = "/models/bp3d_heart.glb";
 export const ATLAS_THORAX_URL = "/models/bp3d_thorax.glb";
@@ -256,11 +257,63 @@ export interface AtlasLabAnatomy {
 }
 
 const labCache = new WeakMap<PreparedAtlasHeart, AtlasLabAnatomy>();
+const labJobs = new WeakMap<PreparedAtlasHeart, Generator<void, AtlasLabAnatomy>>();
 
-/** Lab anatomy for a prepared atlas heart (cached per heart). */
+/** Lab anatomy for a prepared atlas heart (cached per heart; finishes any work started in idle time). */
 export function prepareLabAnatomy(atlas: PreparedAtlasHeart): AtlasLabAnatomy {
-  const hit = labCache.get(atlas);
-  if (hit) return hit;
+  for (;;) {
+    const hit = labCache.get(atlas);
+    if (hit) return hit;
+    stepLabAnatomy(atlas);
+  }
+}
+
+/**
+ * Prepares the lab anatomy a step at a time (each a few tens of ms at most) while the browser is idle, so the
+ * first time the lab opens it is ready. Returns a cancel function.
+ */
+export function prepareLabAnatomyWhenIdle(atlas: PreparedAtlasHeart): () => void {
+  let cancel = () => {};
+  let cancelled = false;
+  const work = (deadline: { timeRemaining: () => number }) => {
+    if (cancelled) return;
+    try {
+      do {
+        if (labCache.has(atlas)) return;
+        stepLabAnatomy(atlas);
+      } while (deadline.timeRemaining() > 6);
+    } catch (e) {
+      console.warn("Lab anatomy could not be prepared in advance", e);
+      return; // opening the lab retries (and reports the error there)
+    }
+    // Idle periods first; on a busy main thread a step still runs every ~0.3 s.
+    if (!labCache.has(atlas)) cancel = whenIdle(work, 300);
+  };
+  cancel = whenIdle(work, 1500);
+  return () => {
+    cancelled = true;
+    cancel();
+  };
+}
+
+/** Runs one step of the heart's lab-anatomy job; the result goes to the cache when the last step is done. */
+function stepLabAnatomy(atlas: PreparedAtlasHeart) {
+  let job = labJobs.get(atlas);
+  if (!job) labJobs.set(atlas, (job = labAnatomySteps(atlas)));
+  let r: IteratorResult<void, AtlasLabAnatomy>;
+  try {
+    r = job.next();
+  } catch (e) {
+    labJobs.delete(atlas); // a failed job is not resumed: the next call starts again (and fails visibly)
+    throw e;
+  }
+  if (r.done) {
+    labCache.set(atlas, r.value);
+    labJobs.delete(atlas);
+  }
+}
+
+function* labAnatomySteps(atlas: PreparedAtlasHeart): Generator<void, AtlasLabAnatomy> {
   const byKey = Object.fromEntries(atlas.parts.map((p) => [p.key, p]));
   const inMm = new Map<string, Float32Array>();
   const mm = (p: AtlasPart) => {
@@ -273,12 +326,14 @@ export function prepareLabAnatomy(atlas: PreparedAtlasHeart): AtlasLabAnatomy {
   const lmMm = lm ? mm(lm) : null;
   const ostium: Record<string, Float32Array> = {};
   const paths: Record<string, TreePaths> = {};
+  yield;
 
   // The left main starts at the aorta; trees touching it (LAD, LCX) start where they leave it.
   let lmPaths: TreePaths | null = null;
   if (lm && lmMm) {
     lmPaths = treePaths(lm.geometry, lmMm, ostiumSeeds(lm, lmMm, aorta, null));
     ostium.lm = lmPaths.dist;
+    yield;
   }
   for (const v of VESSELS) {
     const part = byKey[v.atlasPart];
@@ -286,8 +341,10 @@ export function prepareLabAnatomy(atlas: PreparedAtlasHeart): AtlasLabAnatomy {
     const P = mm(part);
     const fed = lmPaths && lmMm ? feedSeeds(P, lmMm, lmPaths.dist) : null;
     const seeds = fed ?? ostiumSeeds(part, P, aorta, v.atlasLabel.trunkFma);
+    yield;
     paths[v.id] = treePaths(part.geometry, P, seeds);
     ostium[v.atlasPart] = paths[v.id].dist;
+    yield;
   }
 
   // Only the ventricular wall can hide a marker: the lab shows the atria and great arteries see-through.
@@ -300,17 +357,18 @@ export function prepareLabAnatomy(atlas: PreparedAtlasHeart): AtlasLabAnatomy {
     return [v.id, m];
   })) as Record<Vessel, LabMarker>;
   (wallMesh?.material as THREE.Material | undefined)?.dispose();
+  yield;
 
   const wall = byKey.ventricles;
   const wallIndex: Record<string, Uint32Array> = {};
   const grid = pointGrid(mm(wall), 4);
   for (const p of atlas.parts) {
-    if (p.layer === "coronary" || p.layer === "cardiac_vein") wallIndex[p.key] = nearestIndices(mm(p), grid);
+    if (p.layer === "coronary" || p.layer === "cardiac_vein") {
+      yield;
+      wallIndex[p.key] = nearestIndices(mm(p), grid);
+    }
   }
-
-  const out = { ostium, wallIndex, markers };
-  labCache.set(atlas, out);
-  return out;
+  return { ostium, wallIndex, markers };
 }
 
 interface TreePaths {

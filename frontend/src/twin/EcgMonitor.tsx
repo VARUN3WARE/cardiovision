@@ -132,9 +132,10 @@ export default function EcgMonitor({ params, timing }: Props) {
   }, []);
 
   const findings = ecgFindings(params);
-  // While the ischaemia lab drives the twin, rate and pressure are the lab's exercise values, not recorded ones.
+  // While the ischaemia lab drives the twin, rate and pressure are the lab's exercise values, not recorded ones
+  // (the EF stays the patient's, so its "not entered" note stays).
   const lab = params.lab !== undefined;
-  const typical = (k: keyof Omit<TwinParams, "notRecorded" | "lab">) => !lab && params.notRecorded.has(k);
+  const median = (k: keyof Omit<TwinParams, "notRecorded" | "lab">) => params.notRecorded.has(k) && !(lab && (k === "hr" || k === "bp"));
   return (
     <div className="flex h-full gap-3 border-t border-slate-700 bg-[#05090f] px-3 py-1.5 text-[10px] text-gray-400">
       <div className="relative min-w-0 flex-1">
@@ -150,16 +151,16 @@ export default function EcgMonitor({ params, timing }: Props) {
       </div>
       <div className="w-44 shrink-0 space-y-0.5 overflow-hidden leading-tight">
         <div className="text-[11px] font-semibold text-emerald-300">
-          ♥ {Math.round(params.hr)} bpm{typical("hr") && <span className="font-normal text-gray-500"> typical</span>}
+          ♥ {Math.round(params.hr)} bpm{median("hr") && <NotEntered />}
           {lab && <LabChip title="Heart rate set by the ischaemia lab's exercise slider" />}
         </div>
         <div>
           <span className="text-gray-200">EF {Math.round(params.ef)}%</span> · {efCategory(params.ef)}
-          {typical("ef") && <span className="text-gray-500"> (typical value)</span>}
+          {median("ef") && <NotEntered />}
         </div>
         <div>
           <span className="text-gray-200">BP {Math.round(params.bp)}</span> mmHg
-          {typical("bp") && <span className="text-gray-500"> (typical value)</span>}
+          {median("bp") && <NotEntered />}
           {lab && <LabChip title="Systolic pressure set by the ischaemia lab's exercise slider" />}
         </div>
         <div className="flex flex-wrap gap-0.5 pt-0.5">
@@ -176,7 +177,7 @@ export default function EcgMonitor({ params, timing }: Props) {
                   {f.text} <span className="font-semibold text-amber-300">lab</span>
                 </span>
               ) : (
-                <span key={f.text} className="rounded bg-slate-800 px-1 text-gray-200" title={f.recorded ? "Recorded" : "Not entered: typical value"}>
+                <span key={f.text} className="rounded bg-slate-800 px-1 text-gray-200" title={f.recorded ? "Recorded" : "Not entered: the model's default"}>
                   {f.text}
                 </span>
               ),
@@ -185,6 +186,15 @@ export default function EcgMonitor({ params, timing }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** A measurement that was not entered: the model (and so the twin) used the cohort median. */
+function NotEntered() {
+  return (
+    <span className="font-normal text-gray-500" title="Not entered: the model used the cohort median">
+      {" "}(cohort median)
+    </span>
   );
 }
 

@@ -1,12 +1,14 @@
 /**
  * Ischaemia lab settings: which artery the sandbox narrowing sits on, how narrow it is and how hard the
- * heart is working. The lab starts from the patient's resting heart rate, systolic pressure and age (so
- * exercise is relative to them) but the narrowing is generic and chosen by the user: it is never this
+ * heart is working. The lab starts from the patient's recorded resting heart rate, systolic pressure and age
+ * (so exercise is relative to them) but the narrowing is generic and chosen by the user: it is never this
  * patient's artery. Deep link: ?lab=lad|lcx|rca&narrowing=80&exercise=1 (opens the Atlas heart).
  */
 import { VESSEL_IDS, type Vessel } from "../anatomy/registry";
 import type { ExplainResponse } from "../api/client";
-import { AGE_DEFAULT, MAX_NARROWING, type LabPatient, type LabState } from "../twin/coronaryPhysiology";
+import {
+  AGE_DEFAULT, HR_DEFAULT, MAX_NARROWING, SBP_DEFAULT, type LabPatient, type LabState,
+} from "../twin/coronaryPhysiology";
 import type { TwinParams } from "../twin/twin";
 
 export interface LabSettings {
@@ -36,23 +38,35 @@ export function labFromQuery(search: string): LabSettings | null {
   };
 }
 
-/** The patient's resting values the lab starts from (age as the model saw it; dataset median if absent). */
-export function labPatient(result: ExplainResponse | null, twin: TwinParams): LabPatient {
-  const exp = result?.explanations.cad;
-  const i = exp ? exp.feature_names.indexOf("Age") : -1;
-  const age = exp && i >= 0 ? exp.feature_values[i] : NaN;
-  return { hr: twin.hr, sbp: twin.bp, age: Number.isFinite(age) && age > 0 ? age : AGE_DEFAULT };
+// The model's columns for the lab's starting values (the API's schema keys are the same names).
+const STARTS = [["PR", "pulse"], ["BP", "BP"], ["Age", "age"]] as const;
+
+/**
+ * The patient's recorded resting pulse, systolic pressure and age as the model saw them (inputs left empty
+ * carry the cohort median the model used); the dataset medians before there is any estimate.
+ */
+export function labPatient(recorded: ExplainResponse | null): LabPatient {
+  const exp = recorded?.explanations.cad;
+  const value = (col: string, fallback: number) => {
+    const i = exp ? exp.feature_names.indexOf(col) : -1;
+    const v = exp && i >= 0 ? exp.feature_values[i] : NaN;
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
+  return { hr: value("PR", HR_DEFAULT), sbp: value("BP", SBP_DEFAULT), age: value("Age", AGE_DEFAULT) };
 }
 
 /**
- * Where the lab's starting values come from, in words: the patient's (the twin always shows the recorded values,
- * also while a what-if scenario colours the arteries), with typical fill-in values said to be typical.
+ * Where the lab's starting values come from, in words: the patient's recorded values (never a what-if
+ * scenario's), with inputs that were not entered named, or the dataset medians before any estimate.
  */
-export function baselineText(result: ExplainResponse | null, twin: TwinParams, p: LabPatient): string {
+export function baselineText(recorded: ExplainResponse | null, p: LabPatient, whatIf = false): string {
   const v = `pulse ${Math.round(p.hr)}, BP ${Math.round(p.sbp)}, age ${Math.round(p.age)}`;
-  if (!result) return `Starts from typical values (no estimate yet): ${v}`;
-  const typical = [twin.notRecorded.has("hr") && "pulse", twin.notRecorded.has("bp") && "BP"].filter(Boolean);
-  return `Starts from the patient's ${v}${typical.length ? ` (${typical.join(" and ")} typical: not entered)` : ""}`;
+  if (!recorded) return `Starts from the dataset medians (no estimate yet): ${v}`;
+  const imputed = new Set(recorded.imputed);
+  const missing = STARTS.filter(([col]) => imputed.has(col)).map(([, name]) => name);
+  const names = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}` : missing[0];
+  const note = missing.length ? ` (${names} not entered: cohort median)` : "";
+  return `Starts from the patient's recorded ${v}${note}${whatIf ? ", not the what-if scenario's" : ""}`;
 }
 
 /**

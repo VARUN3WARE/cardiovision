@@ -127,17 +127,19 @@ interface LabelProps {
   selected: Vessel | null;
   occluders: RefObject<THREE.Object3D>[] | undefined;
   onSelect: (v: Vessel | null) => void;
+  /** Size relative to normal (the lab shrinks the whole view into the space its panel leaves). */
+  scale?: number;
 }
 
 /**
  * Clickable risk label pinned to a vessel (shared by every heart model). It reads "LAD · 70% chance"
  * (a chance of ≥50% narrowing), never "LAD 70%", which a cardiologist would read as 70% narrowing.
  */
-export function VesselLabel({ vessel, name, position, p, color, selected, occluders, onSelect }: LabelProps) {
+export function VesselLabel({ vessel, name, position, p, color, selected, occluders, onSelect, scale = 1 }: LabelProps) {
   const isSelected = vessel === selected;
   const mid = p !== null && undecided(p) > 0.5;
   return (
-    <Html position={position} center distanceFactor={5} zIndexRange={[10, 0]} occlude={occluders}>
+    <Html position={position} center distanceFactor={5 * scale} zIndexRange={[10, 0]} occlude={occluders}>
       <button
         // The reasoning view keeps its towers clear of these labels.
         data-vessel-label={vessel}

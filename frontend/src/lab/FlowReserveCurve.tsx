@@ -58,7 +58,7 @@ export default function FlowReserveCurve({ vessel, patient, narrowing, demand, o
         viewBox={`0 0 ${W} ${H}`}
         className="w-full cursor-crosshair select-none"
         role="img"
-        aria-label={`Resting and maximal coronary flow against narrowing for this artery. Maximal flow starts to fall at about 50% narrowing; resting flow holds until about 85%. Current narrowing ${Math.round(narrowing * 100)}%: maximal flow ${cur.max.toFixed(1)} times resting.`}
+        aria-label={`Resting and maximal coronary flow against narrowing for this artery. Maximal flow starts to fall at about 50% narrowing; resting flow holds until about 85%. Current narrowing ${Math.round(narrowing * 100)}%: maximal flow ${cur.max.toFixed(2)} and resting flow ${cur.rest.toFixed(2)} times this heart's normal resting flow.`}
         onPointerMove={(e) => setHover(fromPointer(e))}
         onPointerLeave={() => setHover(null)}
         onClick={(e) => onPick?.(Math.round(fromPointer(e) * 100) / 100)}
@@ -87,7 +87,7 @@ export default function FlowReserveCurve({ vessel, patient, narrowing, demand, o
       </svg>
       <div className="text-[9px] leading-snug text-gray-400" aria-live="polite" title="In units of this heart's resting flow through a normal artery">
         At <b className="text-gray-100">{Math.round((read ?? cur).narrowing * 100)}%</b>: maximal{" "}
-        <b className="text-gray-100">{(read ?? cur).max.toFixed(1)}×</b>, resting <b className="text-gray-100">{(read ?? cur).rest.toFixed(2)}×</b>
+        <b className="text-gray-100">{(read ?? cur).max.toFixed(2)}×</b>, resting <b className="text-gray-100">{(read ?? cur).rest.toFixed(2)}×</b>
         <span className="text-gray-500">{read && onPick ? " · click to set" : ""}</span>
       </div>
       <figcaption className="text-[10px] leading-snug text-gray-200">
