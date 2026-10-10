@@ -2,28 +2,44 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExplainResponse } from "../api/client";
 import { formatPct } from "../risk";
 import { VESSELS } from "../anatomy/registry";
+import { FEATURE_LABELS } from "../featureLabels";
 import ErrorBoundary from "../components/ErrorBoundary";
 import CohortGalaxy, { type GalaxyHover } from "./CohortGalaxy";
 import { CAD_COLOR, NO_CAD_COLOR } from "./palette";
 import {
-  buildSpace, cohortRates, findSimilar, inputsFromExplanation, placeOnMap, summarise,
-  type CohortData, type CohortPatient, type CohortSummary, type Space,
+  buildSpace, closeLimit, cohortRates, comparedInputs, findSimilar, inputsFromExplanation, placeOnMap, summarise,
+  type CohortData, type CohortPatient, type CohortSummary, type Compared, type RecordMatch, type Similar, type Space,
 } from "./knn";
 
 let loading: Promise<Space> | null = null;
 
-/** The cohort file (~80 KB) loads on first use, outside the main bundle. */
+/**
+ * The cohort file (~80 KB) is fetched on first use, outside the main bundle: as an asset rather than
+ * import()ed, because the browser caches a failed dynamic import for good and a retry would never refetch.
+ */
+function fetchCohort(): Promise<CohortData> {
+  return fetch(new URL("./cohort.json", import.meta.url), { signal: AbortSignal.timeout(20000) }).then((res) => {
+    if (!res.ok) throw new Error(`cohort.json: HTTP ${res.status}`);
+    return res.json() as Promise<CohortData>;
+  });
+}
+
+/** One quiet second attempt (a network blip or a dev-server reload); after that the card offers Retry. */
 function loadSpace(): Promise<Space> {
-  loading ??= import("./cohort.json").then((m) => buildSpace(m.default as unknown as CohortData));
+  loading ??= fetchCohort()
+    .catch(() => new Promise<void>((resolve) => setTimeout(resolve, 1500)).then(fetchCohort))
+    .then(buildSpace);
   return loading;
 }
 
-/** Loads the cohort once there is a result; after a failure, each new result tries again. */
-function useSpace(trigger: unknown): { space: Space | null; failed: boolean } {
+/** Loads the cohort once there is a result. After a failure, Retry (or the next result) tries again. */
+function useSpace(trigger: unknown): { space: Space | null; failed: boolean; retry: () => void } {
   const [state, setState] = useState<{ space: Space | null; failed: boolean }>({ space: null, failed: false });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!trigger || state.space) return;
     let alive = true;
+    setState((s) => (s.failed ? { space: null, failed: false } : s)); // "Loading…" while trying again
     loadSpace().then(
       (space) => alive && setState({ space, failed: false }),
       () => {
@@ -34,8 +50,9 @@ function useSpace(trigger: unknown): { space: Space | null; failed: boolean } {
     return () => {
       alive = false;
     };
-  }, [trigger, state.space]);
-  return state;
+  }, [trigger, state.space, attempt]);
+  const retry = useCallback(() => setAttempt((a) => a + 1), []);
+  return { ...state, retry };
 }
 
 interface Props {
@@ -49,15 +66,33 @@ interface Props {
   scrollOnOpen?: boolean;
 }
 
+interface View {
+  similar: Similar;
+  /** The inputs compared: the entered ones (those the API filled in are left out). */
+  compared: Compared;
+  here: [number, number, number];
+  summary: CohortSummary;
+  /** The 10th most similar is about as near as for most of the dataset's own patients. */
+  close: boolean;
+}
+
 /** "Similar patients": the 10 most similar real patients, their angiograms and held-out estimates. */
 export default function CohortPanel({ open, onToggle, result, scenario, scrollOnOpen = false }: Props) {
-  const { space, failed } = useSpace(result);
-  const view = useMemo(() => {
+  const { space, failed, retry } = useSpace(result);
+  const view = useMemo<View | null>(() => {
     if (!space || !result) return null;
     const x = inputsFromExplanation(result.explanations?.cad, space.data.columns);
     if (!x) return null;
-    const similar = findSimilar(space, x);
-    return { similar, here: placeOnMap(space, similar), summary: summarise(space, similar.neighbours) };
+    const compared = comparedInputs(space, result.imputed);
+    const similar = findSimilar(space, x, space.data.k, compared.use);
+    const kth = similar.neighbours[similar.neighbours.length - 1]?.distance ?? Infinity;
+    return {
+      similar,
+      compared,
+      here: placeOnMap(space, similar),
+      summary: summarise(space, similar.neighbours),
+      close: kth <= closeLimit(space, compared.use),
+    };
   }, [space, result]);
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -76,7 +111,7 @@ export default function CohortPanel({ open, onToggle, result, scenario, scrollOn
     };
   }, [scrollOnOpen, open, view]);
 
-  const headline = view ? `${view.summary.counts.cad} of ${view.summary.k} had CAD` : "";
+  const headline = !view ? "" : view.close ? `${view.summary.counts.cad} of ${view.summary.k} had CAD` : "no close matches";
 
   return (
     <div ref={cardRef} className="rounded bg-slate-800 p-4">
@@ -90,19 +125,24 @@ export default function CohortPanel({ open, onToggle, result, scenario, scrollOn
       {open && (
         <div className="mt-3 space-y-3">
           <div role="note" className="rounded border border-sky-800 bg-sky-950/40 px-2 py-1.5 text-[11px] text-sky-200">
-            <b>Similar in recorded findings (weighted by what the model uses), not identical patients;</b> outcomes
+            <b>Similar in recorded findings (weighted by what the CAD model uses), not identical patients;</b> outcomes
             from this single referral cohort.
           </div>
           {!result ? (
             <div className="text-xs text-gray-400">Run an estimate first.</div>
           ) : failed ? (
-            <div className="text-xs text-red-300">Could not load the cohort data.</div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-red-300">
+              Could not load the cohort data.
+              <button onClick={retry} className="rounded bg-slate-700 px-2 py-0.5 font-semibold text-gray-100 hover:bg-slate-600">
+                Retry
+              </button>
+            </div>
           ) : !space ? (
             <div className="text-xs text-gray-400">Loading the 303 patients…</div>
           ) : !view ? (
             <div className="text-xs text-gray-400">Similar patients are unavailable for this result.</div>
           ) : (
-            <CohortBody space={space} view={view} result={result} scenario={scenario} />
+            <CohortBody space={space} view={view} scenario={scenario} />
           )}
         </div>
       )}
@@ -125,17 +165,10 @@ function scrollToTop(el: HTMLElement) {
   window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 8 });
 }
 
-interface View {
-  similar: ReturnType<typeof findSimilar>;
-  here: [number, number, number];
-  summary: CohortSummary;
-}
-
-function CohortBody({ space, view, result, scenario }: { space: Space; view: View; result: ExplainResponse; scenario: boolean }) {
+function CohortBody({ space, view, scenario }: { space: Space; view: View; scenario: boolean }) {
   const { data } = space;
-  const { similar, here, summary } = view;
-  const idx = (t: string) => data.targets.indexOf(t);
-  const cad = idx("cad");
+  const { similar, compared, here, summary, close } = view;
+  const cad = data.targets.indexOf("cad");
   const rates = useMemo(() => cohortRates(data), [data]);
   const neighbourIds = useMemo(() => similar.neighbours.map((n) => n.index), [similar]);
 
@@ -150,25 +183,50 @@ function CohortBody({ space, view, result, scenario }: { space: Space; view: Vie
   const mapRef = useRef<HTMLDivElement>(null);
   const keep = Math.round(data.embedding.neighbour_retention * data.k);
   const method = data.embedding.method.startsWith("t-SNE") ? "t-SNE" : "PCA";
+  const anyArtery = VESSELS.some((v) => summary.counts[v.id] > 0);
+  const same = compared.skipped ? "same values for everything entered" : "same recorded values";
 
   return (
     <>
       {scenario && <div className="text-[11px] text-sky-300">Shown for the recorded values, not the what-if scenario.</div>}
       <div>
-        <p className="text-sm text-gray-200">{summaryText(summary)}</p>
+        {close ? (
+          <p className="text-sm text-gray-200">{summaryText(summary, true)}</p>
+        ) : (
+          <>
+            <p role="note" className="rounded border border-amber-700/70 bg-amber-950/40 px-2 py-1.5 text-[11px] text-amber-200">
+              <b>No close matches among the {data.n}:</b> these are the {summary.k} nearest, but less alike than the{" "}
+              {summary.k} nearest of {pct(data.closeness.quantile)} of the dataset&apos;s own patients, so their outcomes say
+              little about this patient.
+            </p>
+            <p className="mt-1.5 text-xs text-gray-400">{summaryText(summary, false)}</p>
+          </>
+        )}
+        {anyArtery && (
+          <p className="mt-0.5 text-[11px] text-gray-400">
+            Similarity reflects CAD overall, so these counts say little about which artery.
+          </p>
+        )}
         <p className="mt-0.5 text-[11px] text-gray-500">
           All {data.n} patients: CAD {pct(rates.cad)}; {VESSELS.map((v) => `${v.label} ${pct(rates[v.id])}`).join(", ")}.
         </p>
         {similar.self !== null && (
           <p className="mt-1 text-[11px] text-gray-400">
-            This is dataset patient <b className="text-gray-200">#{similar.self}</b> (same recorded values): it is left out
-            of the {summary.k} and glows at its own place on the map.
+            This is dataset patient <b className="text-gray-200">#{similar.self}</b> ({same}): it is left out of
+            the {summary.k} and glows at its own place on the map.
           </p>
         )}
-        {result.imputed.length > 0 && (
+        {similar.edited && (
+          <p className="mt-1 text-[11px] text-gray-400">
+            This is dataset patient <b className="text-gray-200">#{similar.edited.index}</b> with{" "}
+            {changedText(similar.edited)}: its record is left out of the {summary.k}, so its own outcome is not counted.
+          </p>
+        )}
+        {compared.skipped > 0 && (
           <p className="mt-1 text-[11px] text-gray-500">
-            {result.imputed.length} input{result.imputed.length === 1 ? " was" : "s were"} not entered and use typical cohort
-            values (as in the model), so similarity partly rests on them.
+            Compared only on what was entered ({compared.n} of the model&apos;s {compared.n + compared.skipped} inputs;
+            the {compared.skipped} not entered are left out). For its estimate the model fills those in: unrecorded
+            findings count as absent, missing measurements take the cohort median.
           </p>
         )}
       </div>
@@ -193,7 +251,15 @@ function CohortBody({ space, view, result, scenario }: { space: Space; view: Vie
             />
           </ErrorBoundary>
           {hover && (
-            <Tooltip hover={hover} box={mapRef.current} space={space} self={similar.self} rank={neighbourIds.indexOf(hover.id)} />
+            <Tooltip
+              hover={hover}
+              box={mapRef.current}
+              space={space}
+              self={similar.self}
+              same={same}
+              edited={similar.edited}
+              rank={neighbourIds.indexOf(hover.id)}
+            />
           )}
           <button
             onClick={() => setResetKey((k) => k + 1)}
@@ -205,13 +271,13 @@ function CohortBody({ space, view, result, scenario }: { space: Space; view: Vie
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-400">
           <span className="flex items-center gap-1"><Swatch color={CAD_COLOR} /> CAD on angiography</span>
-          <span className="flex items-center gap-1"><Swatch color={NO_CAD_COLOR} /> No ≥50% narrowing</span>
+          <span className="flex items-center gap-1"><Swatch color={NO_CAD_COLOR} /> No CAD on angiography</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-white shadow-[0_0_6px_2px_rgba(255,255,255,0.55)]" /> This patient</span>
           <span>Ringed and linked: the {summary.k} most similar</span>
         </div>
         <p className="mt-1 text-[10px] leading-snug text-gray-500">
-          Map of all {data.n} patients placed by similarity ({method}). It keeps about {keep} of each patient's {data.k} most
-          similar nearby; the list uses the full similarity.
+          Map of all {data.n} patients placed by similarity ({method}). It keeps about {keep} of each patient&apos;s {data.k}{" "}
+          most similar nearby; the list uses the exact similarity. {groupsText(data)}
         </p>
       </div>
 
@@ -235,8 +301,12 @@ function NeighbourTable({ space, summary, neighbours, highlight, onRowHover }: {
         </caption>
         <thead>
           <tr className="text-[10px] text-gray-500">
-            <th scope="col" className="pb-0.5 pl-1 text-left font-normal">Patient</th>
-            {cols.map((c) => <th key={c.id} scope="col" className="pb-0.5 font-normal">{c.label}</th>)}
+            <th scope="col" className="pl-1 text-left font-normal">Patient</th>
+            {cols.map((c) => <th key={c.id} scope="col" className="font-normal">{c.label}</th>)}
+          </tr>
+          <tr className="text-[9px] text-gray-500">
+            <td className="pb-0.5 pl-1">age, sex</td>
+            <td colSpan={cols.length} className="pb-0.5 text-center">each: angiography · held-out estimate</td>
           </tr>
         </thead>
         <tbody>
@@ -254,8 +324,8 @@ function NeighbourTable({ space, summary, neighbours, highlight, onRowHover }: {
               >
                 <th scope="row" className="py-0.5 pl-1 text-left font-normal text-gray-300">
                   #{i}
-                  {odd.has(i) && <sup className="text-amber-300">*</sup>}
-                  <span className="ml-1.5 text-gray-500">{p.age} {p.sex}</span>
+                  {odd.has(i) && <sup className="text-amber-300">*</sup>}{" "}
+                  <span className="ml-1 text-gray-500">{p.age} {p.sex}</span>
                 </th>
                 {at.map((j, c) => (
                   <td key={cols[c].id} className="py-0.5 text-center">
@@ -295,8 +365,9 @@ function NeighbourTable({ space, summary, neighbours, highlight, onRowHover }: {
   );
 }
 
-function Tooltip({ hover, box, space, self, rank }: {
-  hover: GalaxyHover; box: HTMLDivElement | null; space: Space; self: number | null; rank: number;
+function Tooltip({ hover, box, space, self, same, edited, rank }: {
+  hover: GalaxyHover; box: HTMLDivElement | null; space: Space; self: number | null; same: string; edited: RecordMatch | null;
+  rank: number;
 }) {
   const w = box?.clientWidth ?? 340;
   const h = box?.clientHeight ?? 240;
@@ -314,7 +385,7 @@ function Tooltip({ hover, box, space, self, rank }: {
       <>
         <div className="font-semibold text-gray-100">This patient</div>
         <div className="text-gray-400">
-          {self !== null ? `Dataset patient #${self} (same recorded values)` : `Placed among its ${data.k} most similar`}
+          {self !== null ? `Dataset patient #${self} (${same})` : `Placed among its ${data.k} most similar`}
         </div>
       </>
     );
@@ -322,11 +393,13 @@ function Tooltip({ hover, box, space, self, rank }: {
     const p = data.patients[hover.id];
     const vessels = vesselsOf(space, p);
     const hadCad = p.angio[cad] === 1;
+    const own = edited?.index === hover.id;
     body = (
       <>
         <div>
           <b className="text-gray-100">#{p.i}</b> <span className="text-gray-400">· {p.age} {p.sex}{rank >= 0 ? ` · similar no. ${rank + 1}` : ""}</span>
         </div>
+        {own && <div className="text-gray-300">This patient&apos;s record before the changes (not counted)</div>}
         <div className="flex items-center gap-1.5 text-gray-200">
           <span className="h-0.5 w-3 shrink-0" style={{ background: hadCad ? CAD_COLOR : NO_CAD_COLOR }} />
           {hadCad ? `CAD; ≥50% in ${vessels.join(", ") || "no named artery"}` : vessels.length ? `No CAD label; ≥50% in ${vessels.join(", ")}` : "No ≥50% narrowing"}
@@ -342,14 +415,37 @@ function Tooltip({ hover, box, space, self, rank }: {
   );
 }
 
-function summaryText(s: CohortSummary): string {
+/** "8 of 10 similar patients had CAD; LAD ≥50% narrowing in 6, ..." (close) or "Of these 10, ..." (not close). */
+function summaryText(s: CohortSummary, close: boolean): string {
   const vessels = VESSELS.map((v) => ({ label: v.label, n: s.counts[v.id] ?? 0 }));
   if (s.counts.cad === 0 && vessels.every((v) => v.n === 0)) {
-    return `None of the ${s.k} similar patients had CAD or ≥50% narrowing of any artery.`;
+    return close
+      ? `None of the ${s.k} similar patients had CAD or ≥50% narrowing of any artery.`
+      : `None of these ${s.k} had CAD or ≥50% narrowing of any artery.`;
   }
   const [first, ...rest] = vessels;
-  return `${s.counts.cad} of ${s.k} similar patients had CAD; ${first.label} ≥50% narrowing in ${first.n}, `
-    + `${rest.map((v) => `${v.label} in ${v.n}`).join(", ")}.`;
+  const odd = s.inconsistent.length;
+  return `${close ? `${s.counts.cad} of ${s.k} similar patients had CAD` : `Of these ${s.k}, ${s.counts.cad} had CAD`}; `
+    + `${first.label} ≥50% narrowing in ${first.n}, ${rest.map((v) => `${v.label} in ${v.n}`).join(", ")}`
+    + (odd ? ` (counts include ${odd} patient${odd === 1 ? "" : "s"} labelled no CAD*)` : "") + ".";
+}
+
+/** "2 inputs changed (Age, Systolic blood pressure)". */
+function changedText(m: RecordMatch): string {
+  const n = m.changed.length;
+  return `${n} input${n === 1 ? "" : "s"} changed (${m.changed.map((c) => FEATURE_LABELS[c]?.label ?? c).join(", ")})`;
+}
+
+/** Caption for the map's two groups, when one input splits it (written by make_cohort.py only then). */
+function groupsText(data: CohortData): string {
+  const g = data.groups;
+  if (!g || g.levels.length !== 2) return "";
+  const yes = g.levels.find((l) => l.value === 1);
+  const no = g.levels.find((l) => l.value === 0);
+  if (!yes || !no) return "";
+  const name = g.column === "Typical Chest Pain" ? "typical angina" : (FEATURE_LABELS[g.column]?.label ?? g.column).toLowerCase();
+  return `The two groups are patients with ${name} (${yes.n}; ${pct(yes.cad)} had CAD) and without (${no.n}; ${pct(no.cad)}), `
+    + "the input the CAD model weighs most.";
 }
 
 function vesselsOf(space: Space, p: CohortPatient): string[] {

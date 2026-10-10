@@ -16,6 +16,8 @@ import { CAD_COLOR, MAP_BG as BG, NO_CAD_COLOR } from "./palette";
 const POINT_RADIUS = 0.03;
 const RING_CAPACITY = 32; // neighbour rings (k is 10)
 const PICK_RADIUS_PX = 14; // hit area ~28 px, larger than the marks
+const RING_COLOR = "#94a3b8"; // slate-400: neighbours' rings, so white means only "this patient"
+const CORE_RADIUS = 0.065; // "this patient": larger than a neighbour's point (0.03 x 1.7 = 0.051)
 
 /** Hover target: a dataset row index, or -1 for the current patient. */
 export interface GalaxyHover {
@@ -108,7 +110,7 @@ function Points({ positions, patients, cadIndex, neighbours, self, highlight }: 
       else if (!near.has(i) && near.size) c.lerp(bg, 0.62); // context points recede; the 10 stay vivid
       mesh.setColorAt(i, c);
     }
-    // A thin white ring (larger back faces) around each of the most similar.
+    // A thin mid-grey ring (larger back faces) around each of the most similar; white is only "this patient".
     const shown = neighbours.slice(0, RING_CAPACITY);
     shown.forEach((idx, k) => {
       p.fromArray(positions, idx * 3);
@@ -127,7 +129,7 @@ function Points({ positions, patients, cadIndex, neighbours, self, highlight }: 
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={rings} args={[geometry, undefined, RING_CAPACITY]} frustumCulled={false}>
-        <meshBasicMaterial color="#f1f5f9" side={THREE.BackSide} toneMapped={false} />
+        <meshBasicMaterial color={RING_COLOR} side={THREE.BackSide} toneMapped={false} />
       </instancedMesh>
     </>
   );
@@ -155,7 +157,7 @@ function Links({ positions, neighbours, here }: { positions: Float32Array; neigh
   );
 }
 
-/** The current patient: a white core with an additive halo that stays visible through other points. */
+/** The current patient: a white core drawn over every point, with an additive halo. */
 function Glow({ position }: { position: [number, number, number] }) {
   const texture = useMemo(() => {
     const size = 64;
@@ -174,11 +176,11 @@ function Glow({ position }: { position: [number, number, number] }) {
   useEffect(() => () => texture.dispose(), [texture]);
   return (
     <group position={position}>
-      <mesh renderOrder={2}>
-        <sphereGeometry args={[0.045, 16, 12]} />
-        <meshBasicMaterial color="#ffffff" fog={false} toneMapped={false} />
+      <mesh renderOrder={10}>
+        <sphereGeometry args={[CORE_RADIUS, 16, 12]} />
+        <meshBasicMaterial color="#ffffff" depthTest={false} fog={false} toneMapped={false} />
       </mesh>
-      <sprite scale={[0.3, 0.3, 1]} renderOrder={3}>
+      <sprite scale={[0.36, 0.36, 1]} renderOrder={11}>
         <spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} blending={THREE.AdditiveBlending} fog={false} toneMapped={false} />
       </sprite>
     </group>

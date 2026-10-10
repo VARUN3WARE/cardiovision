@@ -27,6 +27,30 @@ Similarity space (the frontend places a new patient with exactly these numbers, 
 vectors. PCA is used instead if t-SNE fails or preserves 10-neighbourhoods worse than PCA
 (sklearn trustworthiness). Coordinates are centred and scaled so 98% of patients lie inside radius 1.
 
+Inputs that were not entered are left out of the distance and of the identity test in the browser
+(the API fills them in for the model, unrecorded findings as absent and measurements as the cohort
+median, and lists them in the response's `imputed`); `schema_to_column` maps those schema names to
+dataset columns.
+
+Recognising the patient's own record (`identity`; knn.ts matchRecord applies these numbers): a dataset
+patient who agrees on every compared input within SAME_TOLERANCE sd is this patient (left out of the
+neighbours); one who agrees on all but MAX_CHANGED or fewer is this patient's record with those inputs
+changed (also left out, so its own outcome is not counted). `bits` says how specific agreeing on each
+input is: -log2 of the chance that two different cohort patients have the same value. A match counts
+only when the agreeing inputs carry at least EXACT_BITS (EDITED_BITS for a changed record) and no other
+patient qualifies, so a few entered inputs (say age and sex) never "identify" anyone. BMI and the
+obesity flag are compared through weight and height when those are given (the API derives them).
+With these values every dataset patient, sent in Quick mode or with every field, is recognised as
+itself, and no simulated new patient (each field taken from a different dataset patient) was.
+
+Closeness (`closeness`): each dataset patient's distance to its 10th most similar other patient; the UI
+says "no close matches" when a patient's 10th is farther than for 95% of the dataset's own patients
+(recomputed in the browser on the same inputs when some were not entered).
+
+Map groups (`groups`): when one binary input (the one the CAD model weighs most) splits the map, i.e.
+almost every patient's map neighbours share its value, the caption names it with each group's size and
+CAD rate. Omitted when that is not the case.
+
 Per patient: dataset row index, map coordinates, the 55 encoded inputs (for neighbours in the browser),
 angiography outcomes (CAD = Cath; LAD/LCX/RCA = >=50% narrowing), the mean out-of-fold ("held-out")
 probability per target from models/oof_predictions.npz (5 CV repeats; fits that never saw the
@@ -52,6 +76,7 @@ from sklearn.metrics import roc_auc_score  # noqa: E402
 from app.cardio_models import VHD_ORD  # noqa: E402
 from app.config import FEATURE_INFO_PATH, MODELS_DIR, TARGETS, TARGET_COLUMN_MAP, TARGET_POSITIVE  # noqa: E402
 from app.encoders import binarize_target, encode_dataframe, load_encoding  # noqa: E402
+from app.schemas import SCHEMA_TO_COLUMN  # noqa: E402
 from train import build_features, load_dataset  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,6 +87,17 @@ SEED = 0
 RECODE = {"VHD": VHD_ORD}  # encoded code -> similarity value, applied before standardising
 TSNE_ARGS = dict(n_components=3, perplexity=30.0, early_exaggeration=12.0, learning_rate="auto",
                  max_iter=1500, init="pca", method="exact")
+# Recognising the patient's own record (see the docstring; knn.ts reads these from the JSON).
+SAME_TOLERANCE = 0.02  # sd: inputs closer than this count as the same value
+EXACT_BITS = 20.0  # a given other patient would agree on the inputs by chance about once in a million
+EDITED_BITS = 32.0  # stricter: a changed record may differ in any MAX_CHANGED of the compared inputs
+MAX_CHANGED = 3
+# Derived by the API from other inputs (schemas.PatientFeatures._consistency): compared through their
+# sources when those are given. Row 153 is BMI 25.0 / obesity "Y" in the dataset, but 64 kg and 160 cm
+# give 24.999... in floating point, so the API sets the flag to "N".
+COMPARE_VIA = {"BMI": ["Weight", "Length"], "Obesity": ["Weight", "Length"]}
+CLOSE_QUANTILE = 0.95  # "close": the 10th most similar no farther than for 95% of the dataset's patients
+GROUP_MIN_SHARE = 0.95  # map neighbours sharing the binary input's value, to call the map "split" by it
 
 
 def sig(v: float, digits: int = 6) -> float:
@@ -100,6 +136,51 @@ def neighbours(U: np.ndarray, i: int, k: int = K) -> list[int]:
     d2 = sq_dists(U, U[i])
     order = np.lexsort((np.arange(len(U)), d2))
     return [int(j) for j in order if j != i][:k]
+
+
+def match_bits(x: np.ndarray, std: np.ndarray) -> np.ndarray:
+    """Per input (recoded values): -log2 of the chance that two different cohort patients agree on it
+    within SAME_TOLERANCE sd, i.e. how much agreeing on it singles a patient out; 0 for constant inputs."""
+    n = len(x)
+    bits = np.zeros(x.shape[1])
+    for j in np.flatnonzero(std > 0):
+        same = np.abs(x[:, j, None] - x[None, :, j]) * (1.0 / std[j]) < SAME_TOLERANCE
+        p = (same.sum() - n) / (n * (n - 1))
+        bits[j] = -np.log2(p) if p > 0 else np.log2(n * (n - 1))
+    return bits
+
+
+def kth_distances(U: np.ndarray, k: int = K) -> np.ndarray:
+    """Each patient's distance to its k-th most similar other patient (the browser's summation order)."""
+    out = np.empty(len(U))
+    for i in range(len(U)):
+        d2 = sq_dists(U, U[i])
+        d2[i] = np.inf
+        out[i] = np.sqrt(np.sort(d2)[k - 1])
+    return out
+
+
+def map_groups(raw: np.ndarray, columns: list[str], weight: np.ndarray, truth: np.ndarray,
+               full_nn: list[set[int]], map_nn: list[set[int]]) -> dict | None:
+    """The binary input the CAD model weighs most, if it splits the map (almost every patient's map
+    neighbours share its value): size and CAD rate per group for the caption; else None."""
+    j = int(np.argmax(weight))
+    g = raw[:, j]
+    levels = np.unique(g)
+    if len(levels) != 2:
+        return None
+    same = lambda sets: float(np.mean([np.mean(g[sorted(s)] == g[i]) for i, s in enumerate(sets)]))  # noqa: E731
+    share_full, share_map = same(full_nn), same(map_nn)
+    if share_map < GROUP_MIN_SHARE:
+        return None
+    cad = TARGETS.index("cad")
+    return {
+        "column": columns[j],
+        "levels": [{"value": num(v), "n": int((g == v).sum()), "cad": round(float(truth[g == v, cad].mean()), 3)}
+                   for v in levels],
+        "neighbours_same": round(share_full, 3),
+        "map_neighbours_same": round(share_map, 3),
+    }
 
 
 def knn_sets(Z: np.ndarray, k: int = K) -> list[set[int]]:
@@ -172,6 +253,11 @@ def main():
     share = np.array([truth[nn].mean(axis=0) for nn in nn_all])
     knn_auc = {t: round(float(roc_auc_score(truth[:, j], share[:, j])), 3) for j, t in enumerate(TARGETS)}
 
+    bits = match_bits(recoded, std)
+    kth = kth_distances(U)
+    close_at = float(np.quantile(kth, CLOSE_QUANTILE))
+    groups = map_groups(raw, columns, weight, truth, full_nn, map_nn)
+
     presets = json.loads(PRESETS_PATH.read_text()) if PRESETS_PATH.exists() else []
     check_rows = sorted({int(p["patient_index"]) for p in presets} | {0, 302})
 
@@ -189,6 +275,17 @@ def main():
         "held_out": "mean out-of-fold probability over 5 CV repeats (models/oof_predictions.npz)",
         "embedding": emb_info,
         "knn_loo_auc": knn_auc,
+        "schema_to_column": {k: v for k, v in SCHEMA_TO_COLUMN.items() if v in columns},
+        "identity": {
+            "tolerance_sd": SAME_TOLERANCE,
+            "exact_bits": EXACT_BITS,
+            "edited_bits": EDITED_BITS,
+            "max_changed": MAX_CHANGED,
+            "via": COMPARE_VIA,
+            "bits": [round(float(b), 3) for b in bits],
+        },
+        "closeness": {"k": K, "quantile": CLOSE_QUANTILE, "distance": round(close_at, 6)},
+        "groups": groups,
         "check": [{"i": i, "neighbours": nn_all[i]} for i in check_rows],
         "patients": [
             {
@@ -217,6 +314,11 @@ def main():
     print("Largest per-unit weights (weight / sd):", ", ".join(f"{c} {v:.3f}" for c, v in top))
     print(f"Embedding: {emb_info}")
     print(f"Leave-one-out AUC of the outcome share among {K} similar patients (optimistic): {knn_auc}")
+    print(f"Close: 10th most similar within {close_at:.3f} for {CLOSE_QUANTILE:.0%} of patients "
+          f"(median {np.median(kth):.3f}, max {kth.max():.3f})")
+    specific = sorted(zip(columns, bits), key=lambda t: -t[1])[:8]
+    print("Most specific inputs (bits):", ", ".join(f"{c} {b:.1f}" for c, b in specific))
+    print(f"Map groups: {groups}")
     for p in presets:
         i = int(p["patient_index"])
         nn = nn_all[i]
