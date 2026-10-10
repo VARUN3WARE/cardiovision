@@ -2,16 +2,18 @@
 
 Interactive 3D cardiovascular risk prediction system for the **Multimodal AI Hackathon 2026** (Track A).
 
-Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosis** (≥50% narrowing) of the **LAD**, **LCX** and **RCA** coronary arteries from 55 clinical, ECG, laboratory and echo features, then maps the risk onto an interactive 3D heart with exact per-feature explanations.
+Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosis** (≥50% narrowing) of the **LAD**, **LCX** and **RCA** coronary arteries from 55 clinical, ECG, laboratory and echo features, then maps the risk onto an interactive 3D heart with exact per-feature explanations. An interactive twin layer goes further: the heart beats with the patient's recorded pulse, ejection fraction, blood pressure and ECG findings; the models' evidence flows into it by data type; a what-if card shows what moves each estimate; a teaching lab shows what a narrowed artery does; and the most similar real patients are shown with their angiograms.
 
 | Validated performance (5×5 repeated CV, n=303) | CAD | LAD | LCX | RCA |
 |---|---|---|---|---|
 | ROC-AUC | **0.943** | **0.856** | **0.761** | **0.739** |
+| 95% CI (bootstrap, independent re-run) | 0.91–0.97 | 0.82–0.91 | 0.71–0.81 | 0.70–0.81 |
 | Accuracy (at 0.5) | 0.883 | 0.799 | 0.700 | 0.682 |
 
 **Documentation:** [technical documentation (PDF, 5 pages)](docs/CardioVision-Technical-Documentation.pdf) ·
 [source](docs/technical-documentation.md) · [model report](docs/model-report.md) (methods, operating points,
-calibration, literature comparison, limitations) · [demo video script](docs/demo-script.md) ·
+calibration, literature comparison, limitations) · [model verification](docs/model-verification.md) (leakage,
+fresh splits, baselines, vessel specificity) · [demo video script](docs/demo-script.md) ·
 [Devpost text](docs/devpost.md).
 
 > ⚠️ **Clinical Safety Disclaimer:** This system is for **decision support and educational purposes only**. It was trained on 303 patients referred for angiography at a single centre and is **not** validated for screening. It is **not** a diagnosis and does not replace angiography, formal diagnostic imaging or professional medical judgement.
@@ -21,35 +23,72 @@ calibration, literature comparison, limitations) · [demo video script](docs/dem
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Frontend  (React + Vite + TS + React Three Fiber)        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ FeatureInput │  │ HeartScene   │  │ ExplanationPanel │  │
-│  │ (clinical    │  │ (3D heart,   │  │ (SHAP feature    │  │
-│  │  form)       │  │  artery      │  │  attributions)   │  │
-│  │              │  │  color-code) │  │                  │  │
-│  └──────┬───────┘  └──────▲───────┘  └────────▲─────────┘  │
-│         │                 │                   │            │
-│         └─────────────────┴───────────────────┘            │
-│                          │ POST /explain                    │
-└──────────────────────────┼─────────────────────────────────┘
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│  Backend  (FastAPI)                                       │
-│  /predict  →  4 models: probability, threshold, risk band │
-│  /explain  →  + exact per-feature attributions (log-odds)  │
-│  /metrics, /features, /health  →  validation + metadata    │
-└──────────────────────────┬─────────────────────────────────┘
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│  Models  (app/cardio_models.py)                           │
-│  Log-odds blend per target: logistic regression on        │
-│  clinical composites + shallow boosted trees (LightGBM /  │
-│  XGBoost); leakage-safe (LAD/LCX/RCA/Cath never inputs)   │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Frontend (React + Vite + TS + Tailwind + React Three Fiber)      │
+│                                                                  │
+│ FeatureInput → App → HeartScene: Realistic, Atlas or Schematic   │
+│ (clinical form)  │     heart; function twin + ECG monitor;       │
+│                  │     reasoning flow; ischaemia lab (sandbox)   │
+│                  ├→ ClinicalDashboard, bullseye, What-if card    │
+│                  ├→ ExplanationPanel + evidence by data type     │
+│                  └→ Similar patients: kNN in the browser over    │
+│                     cohort.json, 3D cohort map                   │
+└───────────┬──────────────────────────────────┬───────────────────┘
+            │ POST /explain (every estimate)   │ POST /predict (what-if drags)
+            ▼                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Backend (FastAPI)                                                │
+│ /predict  →  4 models: probability, threshold, risk band         │
+│ /explain  →  + exact per-feature attributions (log-odds)         │
+│ /metrics, /features, /health  →  validation + metadata           │
+└────────────────────────────────┬─────────────────────────────────┘
+                                 ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Models (app/cardio_models.py)                                    │
+│ Log-odds blend per target: logistic regression on clinical       │
+│ composites + shallow boosted trees (LightGBM / XGBoost);         │
+│ leakage-safe (LAD/LCX/RCA/Cath never inputs)                     │
+└──────────────────────────────────────────────────────────────────┘
+Offline: train.py → models/ · make_presets.py → presets.json ·
+         make_cohort.py → cohort.json · verify_models.py → docs/model-verification.md
 ```
 
 ## Features
+
+### Interactive twin and simulations (standout layer)
+
+Deep links open each view directly (append to `http://localhost:5173/`). `?patient=low|lad|rca|triple|uncertain`
+loads a dataset patient and `?heart=realistic|atlas|schematic` picks the heart.
+
+- **Function twin + ECG monitor**: the heart beats at the patient's recorded pulse, with the squeeze set by the
+  ejection fraction, the aortic pulse by systolic BP and a late lateral wall in left bundle branch block; a
+  two-lead illustrative ECG (II, V1), in step with the beat, shows the recorded ECG findings. All three hearts.
+  `?patient=lad&heart=atlas`
+- **Reasoning flow**: each model's exact attributions summed by data type (history & demographics, symptoms &
+  exam, ECG, echo, labs, pre-test score) stream from towers around the heart into the selected artery, or into
+  a halo round the whole heart for overall CAD (width = effect, red pushes up, blue pulls down). The explanation
+  panel shows the same numbers as an "Evidence by data type" strip. `?patient=lad&heart=atlas&reasoning=1`
+  (add `&model=lad|lcx|rca` for one artery)
+- **What-if**: sliders for systolic BP, fasting glucose and triglycerides, a quit-smoking switch and "flip one
+  recorded finding" switches (typical angina, ST depression, wall motion, EF) re-run the models live; a delta
+  strip shows each change. The form is never edited, Reset returns to the patient exactly, and LDL, HDL and
+  weight are locked (no learned benefit in this cohort, [verification §7](docs/model-verification.md)).
+  `?patient=rca&whatif=1&contrast=angina` (also `bp=`, `fbs=`, `tg=`, `quit=1`, `contrast=angina,st,rwma,ef`)
+- **Ischaemia lab** (teaching sandbox, Atlas heart): drag a generic narrowing (0–95%) and exercise (rest → peak)
+  and watch flow pulses (mostly in diastole) thin past the SANDBOX marker, the territory turn ischaemic and
+  contract less, the ischaemic cascade light up beside the dataset inputs it corresponds to, and the flow-reserve
+  curve show why ≥50% is the threshold. Textbook coronary physiology, unit-tested against the published curve;
+  exercise starts from the patient's recorded pulse, BP and age. `?patient=triple&lab=lad&narrowing=90&exercise=1`
+- **Similar patients + cohort map**: the 10 most similar of the 303 real patients (found in the browser, inputs
+  weighted by what the CAD model uses, inputs not entered left out), their held-out estimates against their
+  angiograms, and a 3D t-SNE map of the cohort coloured by outcome. `?patient=triple&cohort=1`
+- **Story mode** (in progress): a captioned one-button tour of these layers for the current patient.
+
+Each layer says what it is: the anatomy is a reference model, not the patient's imaging; the twin uses the
+recorded values; attributions are associations in a referral cohort, not causes; the what-if shows model
+sensitivity, not the effect of treatment; the lab is a labelled sandbox, never the patient's lesion.
+
+### Core
 
 - **Validated models**: per target, an equal-weight log-odds blend of a regularised logistic regression on
   clinical composites (Diamond-Forrester pre-test probability, risk-factor and ECG-abnormality counts, lipid
@@ -91,26 +130,30 @@ calibration, literature comparison, limitations) · [demo video script](docs/dem
   interventricular groove, LCX + obtuse marginals in the left AV groove, RCA + conus/RV/acute marginal/PDA/
   posterolateral branches in the right AV and posterior interventricular grooves. They taper and wander
   slightly, sit half-embedded in lobular **epicardial fat**, and are paired with the cardiac veins (great,
-  middle, small cardiac veins, coronary sinus). Each artery is colored green → amber → red by its predicted
-  stenosis probability.
+  middle, small cardiac veins, coronary sinus). Each artery takes its model's band colour (green, amber, red).
 - **Realistic rendering**: wet-tissue physical materials (clearcoat + reddish sheen), procedural muscle-fibre
   normal map, studio environment lighting built from light-formers (no HDR download), contact shadow, and an
   "HD" post-processing pass (N8AO ambient occlusion, bloom on the selected vessel, ACES tone mapping,
-  vignette) that can be switched off on slow GPUs. Ventricles and atria contract separately at the patient's
-  pulse rate.
+  vignette) that can be switched off on slow GPUs.
+- **One band colour scale** across the 3D arteries, cards and legend (lower / undecided / higher, with stripes
+  for undecided); the last estimate stays on screen while you type, so the arteries never flash grey.
 - **Perfusion territories**: myocardium shaded by the risk of the vessel that supplies it (LAD: anterior wall,
   septum, apex; LCX: lateral wall; RCA: RV and inferior wall).
 - **Click to inspect**: clicking an artery, its label, or a region of heart wall (which selects the artery
-  perfusing it) swings the camera to that territory, highlights the supplied myocardium and switches the SHAP
-  panel to that vessel's model.
+  perfusing it) swings the camera to that territory, highlights the supplied myocardium, switches the
+  explanation panel to that vessel's model and opens the **vessel inspector**: band, the rate observed in
+  validation, the decision threshold with its measured sensitivity and specificity, the model's AUC, the main
+  drivers, the territory with its AHA segments, and what it does not show (Esc closes).
+- **AHA 17-segment bullseye** in the dashboard, linked to the 3D heart: hover a segment to find its artery and
+  tint its territory, click to inspect it.
 - **Plain-language explanations per model**: a summary sentence, the top drivers with strength and odds
-  multipliers, derived clinical scores labelled with their inputs, and a waterfall in percentage points. The
-  attributions are exact (linear terms + native TreeSHAP, base + Σ = model log-odds, checked per request).
+  multipliers, derived clinical scores labelled with their inputs, a waterfall in percentage points and a
+  physiological breakdown of all 55 measurements by body system. The attributions are exact (linear terms +
+  native TreeSHAP, base + Σ = model log-odds, checked per request).
 - **Example patients**: five real dataset patients (normal, LAD, RCA, three-vessel, and an honest uncertain
   case), shown with their angiography result and the *held-out* estimate (from models that never saw them),
   including false alarms.
-- **Anatomy pins**: numbered annotations with short clinical notes.
-- Heartbeat animation at the patient's pulse rate.
+- **Anatomy pins** (Realistic and Schematic hearts): numbered annotations with short clinical notes.
 
 ### 3D performance without a dedicated GPU
 
@@ -127,7 +170,9 @@ GT2, Mesa, Chrome) with the 3D panel at 676×757 px, device pixel ratio 1. Frame
 
 Every configuration stays under 18 ms per frame (above 55 fps). The device pixel ratio is capped at 1.5,
 contact shadows are rendered once per model, and HD switches itself off if the frame rate stays below about
-24 fps. The asset sizes are small: Realistic heart 1.6 MB, Atlas heart 0.39 MB, chest 0.35 MB.
+24 fps. The asset sizes are small: Realistic heart 1.6 MB, Atlas heart 0.39 MB, chest 0.35 MB. The table was
+measured before the twin layers were added; they allocate nothing per frame and use instanced particles, but
+have not yet been re-timed on the integrated GPU.
 
 ## Quickstart
 
@@ -148,8 +193,15 @@ python train.py
 # Optional: regenerate the frontend's example patients (frontend/src/presets.json)
 python make_presets.py
 
+# Optional: regenerate the "Similar patients" data (frontend/src/cohort/cohort.json, a few seconds,
+# byte-identical on re-runs). Re-run it after any retrain, so its weights and held-out estimates match.
+python make_cohort.py
+
 # Sanity check (no server needed)
 python test_pipeline.py
+
+# Optional: independent model verification (a few minutes; writes docs/model-verification.md)
+python verify_models.py
 
 # Serve API
 uvicorn app.main:app --reload --port 8000
@@ -161,6 +213,7 @@ API docs at http://localhost:8000/docs
 cd frontend
 npm install
 npm run dev
+npm test        # unit tests (vitest): twin, coronary physiology, reasoning groups, what-if, cohort kNN
 ```
 App at http://localhost:5173 (Vite proxies API calls to :8000, so start the backend first).
 To point a production build at another API host, set `VITE_API_URL` at build time (CORS is enabled).
@@ -186,40 +239,63 @@ backend/
     config.py          # shared paths/constants
   train.py             # training: 5x5 CV metrics, thresholds, calibration bands, feature info
   make_presets.py      # picks real example patients from held-out predictions
+  make_cohort.py       # similarity space + 3D t-SNE map of the 303 patients -> frontend/src/cohort/cohort.json
+  verify_models.py     # independent verification -> docs/model-verification.md, models/verification.json
   test_pipeline.py     # in-process end-to-end test
   experiments/         # leakage-safe harness + the model-selection experiments
   requirements.txt     # runtime; requirements-dev.txt adds experiment-only packages
   data/                # UCI zip (committed); extracted CSV (gitignored)
-  models/              # metrics.json, feature_info.json (committed); trained weights (gitignored)
+  models/              # metrics, features, encoding, feature_info, verification JSON (committed); weights (gitignored)
 frontend/
+  public/models/       # heart.glb (Realistic), bp3d_heart.glb + bp3d_thorax.glb (Atlas), ATTRIBUTION.md
+  scripts/             # build-bp3d.mjs (Atlas GLBs), compress-heart.mjs
   src/
     App.tsx
+    anatomy/registry.ts    # one artery registry (VESSELS, territories, AHA segments) drives every view
     components/
-      heartAnatomy.ts      # procedural heart surface, epicardial fat, coronary arteries/veins, great vessels,
-                           #   atria, territories, noise + generated normal maps
-      HeartScene.tsx       # R3F scene: model toggle/fallback, lighting, post-processing, selection,
-                           #   camera focus, schematic heart
-      SpecimenHeart.tsx    # realistic heart model: territories overlay, vessels, pins, heartbeat
+      HeartScene.tsx       # R3F scene: heart toggle/fallback, toolbar, lighting, post-processing, selection,
+                           #   camera, measured overlay layout, schematic heart
+      SpecimenHeart.tsx    # realistic heart: territories overlay, vessels, pins, heartbeat
       specimenAnatomy.ts   # coronary tree traced on the model, surface snapping, territories, views
-      ArteryTube.tsx       # risk-coloured, clickable vessel tube with label (shared by both hearts)
+      AtlasHeart.tsx       # BodyParts3D heart + chest: named branches, X-ray, lab pulses and marker
+      atlasAnatomy.ts      # atlas geometry, territories, views, distance from the ostium (lab)
+      atlasMaterials.ts    # shader patches: tissue bump, chest cutaway, stripes, flow pulses, hypokinesis
+      heartAnatomy.ts      # procedural (schematic) heart, fat, arteries/veins, territories, normal maps
+      ArteryTube.tsx       # risk-coloured, clickable vessel tube with label (shared material)
+      VesselInspector.tsx  # one artery's estimate, reliability, drivers and territory
+      Bullseye.tsx         # AHA 17-segment map linked to the 3D heart
       ClinicalDashboard.tsx # risk bands, validation AUC, held-out vs angiography, notices
+      WhatIfPanel.tsx      # what-if card: sliders, locked inputs, finding switches, delta strip
       FeatureInput.tsx     # clinical form: quick/full mode, validation, example patients
-      ExplanationPanel.tsx  # plain-language per-model explanations
+      ExplanationPanel.tsx # plain-language per-model explanations
       ErrorBoundary.tsx    # keeps the app usable if a panel (e.g. WebGL) fails
+    twin/                  # function twin: heart clock, beat timing, mechanics, ECG (twin.ts, EcgMonitor.tsx,
+                           #   useHeartMotion.ts) and the lab's coronary physiology (coronaryPhysiology.ts)
+    reasoning/             # data-type groups (dataGroups.ts), 3D streams (ReasoningFlow.tsx), anchors,
+                           #   "Evidence by data type" strip
+    lab/                   # ischaemia lab panel, flow-reserve curve, lab settings and deep link
+    whatif/                # scenario logic (scenario.ts), API wiring (useScenario.ts), strip above the 3D view
+    cohort/                # cohort.json (generated), kNN (knn.ts), Similar patients card, 3D cohort map
     fieldSpec.ts           # single source for form fields, units, ranges, payload/validation
     featureLabels.ts       # clinical labels for model features and derived scores
-    risk.ts                # probability / band / reliability formatting
+    risk.ts                # probability / band / reliability formatting, band colours
     presets.json           # generated by backend/make_presets.py
     api/client.ts
   package.json
+scripts/bp3d/              # BodyParts3D part list and range fetcher (npm run assets:bp3d)
 ```
 
 ## Evaluation (per rubric)
-- **Predictive Performance (30%)** — accuracy, precision, recall, F1, ROC-AUC for CAD + LAD/LCX/RCA
-- **3D Visualization (25%)** — interactive heart, artery risk color-mapping, rotate/zoom/select
-- **Clinical Interpretability (20%)** — SHAP feature attributions, physiological breakdown
-- **System Integration (15%)** — data pipeline, model↔dashboard, real-time updates
-- **Technical Implementation (10%)** — architecture, reproducibility, public datasets/meshes
+- **Predictive Performance (30%)** — ROC-AUC, accuracy, precision, recall, F1 for CAD + LAD/LCX/RCA under
+  5×5 repeated CV; independent verification (no leakage, fresh splits, bootstrap CIs, baselines)
+- **3D Visualization (25%)** — three hearts (Realistic, BodyParts3D Atlas in the chest, Schematic), artery risk
+  colours, territories, inspector, bullseye; the function twin with ECG, reasoning streams, the ischaemia lab
+  and the 3D cohort map
+- **Clinical Interpretability (20%)** — exact attributions, plain-language panel, physiological breakdown,
+  evidence by data type, what-if sensitivity, the ischaemic cascade, similar patients with their angiograms
+- **System Integration (15%)** — data pipeline, model↔dashboard↔3D, live updates, what-if re-runs while dragging
+- **Technical Implementation (10%)** — architecture, reproducibility (deterministic generators, pinned deps),
+  unit tests, public datasets and meshes
 
 ## Credits
 - 3D heart model: ["Realistic Human Heart"](https://sketchfab.com/3d-models/realistic-human-heart-3f8072336ce94d18b3d0d055a1ece089)
@@ -230,6 +306,9 @@ frontend/
   International** ([licence](https://dbarchive.biosciencedbc.jp/en/bodyparts3d/lic.html)); derived files
   `frontend/public/models/bp3d_*.glb` are distributed under CC BY-SA 4.0. Changes and sources:
   [`frontend/public/models/ATTRIBUTION.md`](frontend/public/models/ATTRIBUTION.md).
+- Ischaemia lab physiology: published models and values, cited in `frontend/src/twin/coronaryPhysiology.ts` and
+  in the lab's Sources list (Gould 1974 and 1980, Pijls 1993, Uren 1994, Dodge 1992, Gobel 1978, Nesto &
+  Kowalchuk 1987, Gallagher 1984, Seligman 2022, ACC/AHA 2002, Fletcher 2013).
 - Dataset: Z-Alizadeh Sani et al., UCI Machine Learning Repository (see below).
 
 ## Dataset
@@ -257,8 +336,8 @@ between split sets; it beats plain logistic regression, default XGBoost and the 
 same folds; calibration slopes 0.85–1.11; the served models equal a fresh refit and the API returns exactly their
 predictions. Two honest limits it confirms: the vessel models mostly measure how much CAD there is, not which
 artery (within CAD patients their AUC falls to 0.62–0.69), and LDL/HDL carry no protective signal in this
-referral cohort. Expect the true AUCs to be about 0.005–0.01 lower than shown (0.01–0.02 for RCA), because the
-recipe was chosen on these 303 patients.
+referral cohort (so the what-if card locks LDL, HDL and weight). Expect the true AUCs to be about 0.005–0.01
+lower than shown (0.01–0.02 for RCA), because the recipe was chosen on these 303 patients.
 
 Decisions at 0.5 shown. The app uses the F1-optimal threshold learned in training (nested estimates: LCX
 F1 0.66, RCA F1 0.61, CAD rule-out sensitivity 0.97 with NPV 0.89); see the model report. The previous XGBoost
