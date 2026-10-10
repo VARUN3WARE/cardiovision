@@ -2,7 +2,7 @@
 
 Interactive 3D cardiovascular risk prediction system for the **Multimodal AI Hackathon 2026** (Track A).
 
-Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosis** (≥50% narrowing) of the **LAD**, **LCX** and **RCA** coronary arteries from 55 clinical, ECG, laboratory and echo features, then maps the risk onto an interactive 3D heart with exact per-feature explanations. An interactive twin layer goes further: the heart beats with the patient's recorded pulse, ejection fraction, blood pressure and ECG findings; the models' evidence flows into it by data type; a what-if card shows what moves each estimate; a teaching lab shows what a narrowed artery does; and the most similar real patients are shown with their angiograms.
+Predicts overall **Coronary Artery Disease (CAD)** and vessel-specific **stenosis** (≥50% narrowing) of the **LAD**, **LCX** and **RCA** coronary arteries from 55 clinical, ECG, laboratory and echo features, then maps the risk onto an interactive 3D heart with exact per-feature explanations. An interactive twin layer goes further: the heart beats with the patient's recorded pulse, ejection fraction, blood pressure and ECG findings; the models' evidence flows into it by data type; a what-if card shows what moves each estimate; a teaching lab shows what a narrowed artery does; the most similar real patients are shown with their angiograms; and one button plays a captioned tour of it all.
 
 | Validated performance (5×5 repeated CV, n=303) | CAD | LAD | LCX | RCA |
 |---|---|---|---|---|
@@ -28,7 +28,8 @@ fresh splits, baselines, vessel specificity) · [demo video script](docs/demo-sc
 │                                                                  │
 │ FeatureInput → App → HeartScene: Realistic, Atlas or Schematic   │
 │ (clinical form)  │     heart; function twin + ECG monitor;       │
-│                  │     reasoning flow; ischaemia lab (sandbox)   │
+│                  │     reasoning flow; ischaemia lab (sandbox);  │
+│                  │     story mode (guided tour)                  │
 │                  ├→ ClinicalDashboard, bullseye, What-if card    │
 │                  ├→ ExplanationPanel + evidence by data type     │
 │                  └→ Similar patients: kNN in the browser over    │
@@ -82,7 +83,15 @@ loads a dataset patient and `?heart=realistic|atlas|schematic` picks the heart.
 - **Similar patients + cohort map**: the 10 most similar of the 303 real patients (found in the browser, inputs
   weighted by what the CAD model uses, inputs not entered left out), their held-out estimates against their
   angiograms, and a 3D t-SNE map of the cohort coloured by outcome. `?patient=triple&cohort=1`
-- **Story mode** (in progress): a captioned one-button tour of these layers for the current patient.
+- **Story mode**: the **▶ Story** button plays a captioned 92-second tour of the current patient on the Atlas
+  heart in six steps: the chest fly-in; the function twin; the reasoning streams for overall CAD; the artery in
+  the highest band with its inspector ("independent estimates, not a culprit ranking"); the ischaemia lab
+  narrowing that artery 0 → 85% and then exercising rest → peak; and a closing card (reference anatomy, referral
+  cohort, cross-validated AUCs with bootstrap CIs, decision support only). Play/pause, previous/next, progress
+  dots, arrow keys, Esc; Exit gives back your exact view (heart, modes, lab, selection, camera) and never changes
+  the patient's data or a what-if scenario; reduced motion gives static steps.
+  `?patient=triple&story=1` (plays from the start), `&step=1..6` (that step as it ends, paused), `&play=1`
+  (plays from the start of that step)
 
 Each layer says what it is: the anatomy is a reference model, not the patient's imaging; the twin uses the
 recorded values; attributions are associations in a referral cohort, not causes; the what-if shows model
@@ -213,7 +222,7 @@ API docs at http://localhost:8000/docs
 cd frontend
 npm install
 npm run dev
-npm test        # unit tests (vitest): twin, coronary physiology, reasoning groups, what-if, cohort kNN
+npm test        # unit tests (vitest): twin, coronary physiology, lab, reasoning groups, what-if, cohort kNN, story
 ```
 App at http://localhost:5173 (Vite proxies API calls to :8000, so start the backend first).
 To point a production build at another API host, set `VITE_API_URL` at build time (CORS is enabled).
@@ -254,7 +263,7 @@ frontend/
     anatomy/registry.ts    # one artery registry (VESSELS, territories, AHA segments) drives every view
     components/
       HeartScene.tsx       # R3F scene: heart toggle/fallback, toolbar, lighting, post-processing, selection,
-                           #   camera, measured overlay layout, schematic heart
+                           #   camera, measured overlay layout, story playback, schematic heart
       SpecimenHeart.tsx    # realistic heart: territories overlay, vessels, pins, heartbeat
       specimenAnatomy.ts   # coronary tree traced on the model, surface snapping, territories, views
       AtlasHeart.tsx       # BodyParts3D heart + chest: named branches, X-ray, lab pulses and marker
@@ -276,6 +285,8 @@ frontend/
     lab/                   # ischaemia lab panel, flow-reserve curve, lab settings and deep link
     whatif/                # scenario logic (scenario.ts), API wiring (useScenario.ts), strip above the 3D view
     cohort/                # cohort.json (generated), kNN (knn.ts), Similar patients card, 3D cohort map
+    story/                 # story mode: the six steps and captions (storySteps.ts), controls and closing
+                           #   card (StoryOverlay.tsx), step clock, AUC CIs copied from verification.json
     fieldSpec.ts           # single source for form fields, units, ranges, payload/validation
     featureLabels.ts       # clinical labels for model features and derived scores
     risk.ts                # probability / band / reliability formatting, band colours
@@ -289,8 +300,8 @@ scripts/bp3d/              # BodyParts3D part list and range fetcher (npm run as
 - **Predictive Performance (30%)** — ROC-AUC, accuracy, precision, recall, F1 for CAD + LAD/LCX/RCA under
   5×5 repeated CV; independent verification (no leakage, fresh splits, bootstrap CIs, baselines)
 - **3D Visualization (25%)** — three hearts (Realistic, BodyParts3D Atlas in the chest, Schematic), artery risk
-  colours, territories, inspector, bullseye; the function twin with ECG, reasoning streams, the ischaemia lab
-  and the 3D cohort map
+  colours, territories, inspector, bullseye; the function twin with ECG, reasoning streams, the ischaemia lab,
+  the 3D cohort map and the guided story mode
 - **Clinical Interpretability (20%)** — exact attributions, plain-language panel, physiological breakdown,
   evidence by data type, what-if sensitivity, the ischaemic cascade, similar patients with their angiograms
 - **System Integration (15%)** — data pipeline, model↔dashboard↔3D, live updates, what-if re-runs while dragging

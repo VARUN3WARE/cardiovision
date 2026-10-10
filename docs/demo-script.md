@@ -2,7 +2,7 @@
 
 Requirements (Track A): 3–10 minutes, on YouTube (unlisted is fine), English audio or subtitles, showing the
 working system, the feature-input workflow, the 3D visualisation interactions and the technical
-implementation. Narration below is about 790 words: roughly 5 minutes 30 seconds of speech at a calm pace, about
+implementation. Narration below is about 800 words: roughly 5 minutes 35 seconds of speech at a calm pace, about
 5:50 with the pauses. Every number in it was checked against the running app or `docs/model-verification.md`
 on 10 Oct.
 
@@ -14,8 +14,8 @@ on 10 Oct.
   the API. Background tabs pause their animation. If a tab ever shows "Cannot reach the prediction API", click
   **Estimate risk**.
 - In each 3D tab the toolbar should read **HD on** (HD switches itself off if the frame rate stays low).
-- Turn off the operating system's "reduce motion" setting: with it, the chest fly-in is skipped and the
-  particles freeze.
+- Turn off the operating system's "reduce motion" setting: with it, the chest fly-in is skipped, the
+  particles freeze and story mode shows static steps.
 - Record with OBS (or similar) at 1080p, 30 fps, with a separate microphone track. Keep the mouse slow.
 - Add English subtitles on YouTube (auto-captions, then correct "LAD", "LCX", "RCA", "ECG", "BodyParts3D",
   "Diamond-Forrester", "ischaemia").
@@ -30,7 +30,7 @@ on 10 Oct.
 | 6 | `?patient=rca&heart=atlas&whatif=1&contrast=angina` |
 | 7 | `?patient=triple&lab=lad&narrowing=0` |
 | 8 | `?patient=triple&cohort=1` |
-| 9 | Story mode: link to be added when it lands (planned `?story=1`) |
+| 9 | `?patient=triple&story=1` (the story starts when the tab loads) |
 | 10 | `docs/model-verification.md` on GitHub (and the PDF's architecture figure) |
 
 ## Scene 1: the problem (0:00–0:20)
@@ -132,15 +132,21 @@ ringed neighbour; scroll the list of held-out estimates against angiography.
 > the dataset, so she is recognised and left out. On the map, the two clusters are patients with and without
 > typical angina.
 
-## Scene 9: story mode (4:20–4:40) — placeholder, update when Story mode lands
+## Scene 9: one button tells the story (4:20–4:45)
 
-**Open:** the Story-mode link (planned `?story=1`). **Do:** press the **Story** button and let two or three
-captioned steps play; show pause and Esc. If Story mode is not ready at recording time, cut this scene.
+**Open:** `?patient=triple&story=1`. The story starts by itself when the tab loads; if it is still running from
+the warm-up, press **Exit ✕** first (the realistic heart this tab opened with comes back). **Do:** press
+**▶ Story** in the 3D toolbar. Let step 1 play (the camera flies in through the chest), press **›** for step 2
+(the caption names her recorded pulse 80, EF 55%, BP 130 and poor R-wave progression) and again for step 3
+(streams into the halo); press **❚❚** and point at the progress dots; then press **Esc**: the realistic heart
+and its camera come back exactly as they were.
 
-> One button tells the whole story on the current patient: the fly-in, the heartbeat and ECG, the reasoning
-> streams, the inspector on the highest-band artery, the lab's cascade, and a closing honesty card.
+> One button tells the whole story on the current patient in about ninety seconds: fly-in, heartbeat and ECG,
+> reasoning streams, the highest-band artery, the lab's cascade, and a closing card with the cross-validated
+> AUCs and their confidence intervals. It pauses or skips anywhere, and Escape gives back exactly the view you
+> had.
 
-## Scene 10: how it was built and verified (4:40–5:30)
+## Scene 10: how it was built and verified (4:45–5:30)
 
 **Open:** the architecture figure in `docs/CardioVision-Technical-Documentation.pdf`, then
 `docs/model-verification.md` on GitHub: sections 2 (leakage), 3 (fresh splits with 95% CIs) and 4 (baselines).
@@ -164,11 +170,11 @@ captioned steps play; show pause and Esc. If Story mode is not ready at recordin
 
 | Criterion (weight) | Where in the video | What the judge sees |
 |---|---|---|
-| Predictive Performance (30%) | 0:55, 4:40 | bands with observed rates, AUC per artery, held-out estimates vs angiography (including a false alarm); permutation test, fresh-split AUCs with 95% CIs, baselines |
-| 3D Visualization (25%) | 0:00, 1:20, 2:00, 3:05, 3:55 | Atlas heart in the chest; function twin + ECG, inspector, bullseye, LBBB; reasoning streams; lab pulses, ischaemic territory and hypokinesis; 3D cohort map |
+| Predictive Performance (30%) | 0:55, 4:45 | bands with observed rates, AUC per artery, held-out estimates vs angiography (including a false alarm); permutation test, fresh-split AUCs with 95% CIs, baselines |
+| 3D Visualization (25%) | 0:00, 1:20, 2:00, 3:05, 3:55, 4:20 | Atlas heart in the chest; function twin + ECG, inspector, bullseye, LBBB; reasoning streams; lab pulses, ischaemic territory and hypokinesis; 3D cohort map; the guided story |
 | Clinical Interpretability (20%) | 1:20, 2:00, 2:30, 3:05, 3:55 | inspector drivers; evidence by data type; what-if sensitivity with locked inputs explained; ischaemic cascade tied to dataset inputs and the flow-reserve curve; similar patients with angiograms |
-| System Integration (15%) | 0:20, 1:20, 2:30, 4:40 | validated form with live updates and listed fill-ins; the twin follows the patient's values; models re-run while dragging; architecture |
-| Technical Implementation (10%) | 4:40 | FastAPI + four blended models, exact attributions, independent verification, unit tests |
+| System Integration (15%) | 0:20, 1:20, 2:30, 4:20, 4:45 | validated form with live updates and listed fill-ins; the twin follows the patient's values; models re-run while dragging; one button drives every layer and gives the view back; architecture |
+| Technical Implementation (10%) | 4:45 | FastAPI + four blended models, exact attributions, independent verification, unit tests |
 
 ## YouTube details
 
@@ -176,6 +182,6 @@ captioned steps play; show pause and Esc. If Story mode is not ready at recordin
 - **Visibility:** Unlisted (not private).
 - **Description:** one-paragraph summary, GitHub link, the safety disclaimer, chapters (0:00 Problem, 0:20 Input,
   0:55 Results, 1:20 Function twin, 2:00 Reasoning flow, 2:30 What-if, 3:05 Ischaemia lab, 3:55 Similar patients,
-  4:20 Story mode, 4:40 How it was built and verified, 5:30 Limitations; adjust to the final cut) and the credits
+  4:20 Story mode, 4:45 How it was built and verified, 5:30 Limitations; adjust to the final cut) and the credits
   "3D heart model: Realistic Human Heart by neshallads, CC BY 4.0" and "Atlas heart and chest: BodyParts3D,
   © The Database Center for Life Science, CC BY 4.0".

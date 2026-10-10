@@ -3,10 +3,6 @@
 Paste each section into the matching Devpost field. Links to add: GitHub repository, YouTube demo
 (unlisted), and the PDF `docs/CardioVision-Technical-Documentation.pdf`.
 
-Before pasting: if Story mode has landed, add this bullet to "What it does" after the similar-patients bullet:
-"**Tells the story in one click**: a captioned tour of all of the above on the current patient, ending with an
-honesty card." If it has not landed, leave it out.
-
 **Tagline (≤ 200 characters):** Predicts coronary artery disease and LAD/LCX/RCA stenosis from routine
 clinical data, maps each risk onto its artery on a 3D heart that beats like the patient's, and explains every
 estimate.
@@ -43,6 +39,9 @@ leakage. So we set ourselves two goals: make the risk visible on the anatomy, an
   threshold.
 - **Similar patients**: the 10 most similar of the 303 real patients, with their held-out estimates against
   their angiograms, and a 3D map of the whole cohort.
+- **Tells the story in one click**: a captioned 90-second tour of all of the above on the current patient,
+  ending with an honesty card (reference anatomy, referral cohort, cross-validated AUCs with confidence
+  intervals); Esc gives back the user's exact view.
 - **Explains every estimate exactly**: a one-sentence summary, the top drivers with odds multipliers, a
   waterfall from the model's starting point to the patient, and a physiological breakdown of all 55
   measurements by body system.
@@ -83,7 +82,7 @@ leakage. So we set ourselves two goals: make the risk visible on the anatomy, an
   map and writes a static file; the browser finds neighbours with the script's exact arithmetic, leaves out
   inputs that were not entered and recognises a patient who is in the dataset.
 - **Tests.** An in-process pipeline test and vitest unit tests for the browser logic (twin timing, physiology
-  curves, data-type sums, what-if logic, nearest neighbours).
+  curves, data-type sums, what-if logic, nearest neighbours, the story script).
 
 ## Results
 
