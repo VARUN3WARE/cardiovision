@@ -17,7 +17,7 @@ from app.model import (
 from app.schemas import (
     COLUMN_TO_SCHEMA, FIXED_COLUMNS, QUICK_FIELDS, SCHEMA_TO_COLUMN, ExplainResponse,
     PatientFeatures, PredictionResponse, RangeWarning, ShapExplanation, TargetResult,
-    VesselProbability,
+    VesselProbability, obesity_flag
 )
 from app.shap_explainer import explain as explain_row
 
@@ -100,7 +100,7 @@ def to_dataset_columns(features: PatientFeatures, info: dict) -> tuple[dict, lis
         out[col] = val
     # BMI may have been imputed: keep Obesity consistent with the BMI actually used.
     if "Obesity" in imputed:
-        out["Obesity"] = "Y" if out["BMI"] >= 25 else "N"
+        out["Obesity"] = obesity_flag(out["BMI"])
     out.update(FIXED_COLUMNS)
     return out, imputed
 

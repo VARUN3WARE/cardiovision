@@ -25,6 +25,12 @@ YN = Optional[Literal["Y", "N"]]
 Flag = Optional[int]
 
 
+def obesity_flag(bmi: float) -> str:
+    """The dataset's "Obesity" flag: BMI >= 25. A small tolerance absorbs float error, so 64 kg / 1.60 m
+    (BMI exactly 25, computed as 24.999999999999996) gets "Y" as the dataset records it."""
+    return "Y" if bmi >= 25 - 1e-9 else "N"
+
+
 class PatientFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -102,7 +108,7 @@ class PatientFeatures(BaseModel):
                 raise ValueError(f"BMI {self.BMI:.1f} does not match weight and height (computed {bmi:.1f}).")
             self.BMI = bmi
         if self.BMI is not None:
-            derived = "Y" if self.BMI >= 25 else "N"
+            derived = obesity_flag(self.BMI)
             if self.Obesity is not None and self.Obesity != derived:
                 raise ValueError(f"Obesity must be {derived!r} for BMI {self.BMI:.1f} (defined as BMI >= 25).")
             self.Obesity = derived

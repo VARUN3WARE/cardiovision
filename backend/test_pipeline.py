@@ -95,6 +95,11 @@ print(f"\n=== RANGE WARNINGS === {sorted(flagged)}")
 
 assert set(_feature_info()["influence"]) == {"cad", "lad", "lcx", "rca"}
 
+# 6b. BMI exactly 25 (64 kg, 1.60 m; float gives 24.999999999999996) is "Obesity" = Y, as the dataset records
+#     for that patient.
+edge = PatientFeatures(**{**patient, "Weight": 64, "Length": 160})
+assert edge.Obesity == "Y", edge.BMI
+
 # 7. Exact attributions for every bundle-branch-block category and every demo preset. In the CAD
 #    blend the linear member attributes to BBB one-hots and the tree member to raw BBB; both must be
 #    summed onto the displayed BBB row (an overwrite once dropped the tree's share and broke /explain).
