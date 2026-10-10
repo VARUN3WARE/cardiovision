@@ -108,8 +108,8 @@ export default function FeatureInput(props: Props) {
         </div>
         <p className="-mt-2 text-[11px] text-gray-500">
           {quick
-            ? "Only the most informative inputs. Everything else is filled with typical values from the 303-patient cohort."
-            : "Leave any field you don't have empty: it is filled with the cohort's typical value and flagged in the results."}
+            ? "Only the most informative inputs. Anything not asked counts as absent (findings) or takes the 303-patient cohort's median (measurements)."
+            : "Leave any field you don't have empty: an unrecorded finding counts as absent, a missing measurement takes the cohort median, and every filled value is listed in the results."}
         </p>
 
         {errorCount > 0 && (

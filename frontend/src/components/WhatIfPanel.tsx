@@ -99,7 +99,7 @@ function Controls({ scenario, dispatch, payload, base, fi, imputed, onDragStart,
         disabled={!dir && !isOn}
         onChange={(v) => dispatch({ type: "contrast", id: c.id, on: v })}
         label={`${c.label}: ${from} → ${to}`}
-        hint={imputed.has(c.key) ? "Not entered: the cohort's typical value was used." : undefined}
+        hint={imputed.has(c.key) ? "Not entered: the model used the default (findings absent, measurements at the cohort median)." : undefined}
       />
     );
   };

@@ -124,7 +124,7 @@ export default function ClinicalDashboard({
       {result.imputed.length > 0 && (
         <details className="rounded border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-[11px] text-gray-400">
           <summary className="cursor-pointer">
-            {result.imputed.length} value{result.imputed.length === 1 ? "" : "s"} not entered, filled with typical cohort values
+            {result.imputed.length} value{result.imputed.length === 1 ? "" : "s"} not entered: findings count as absent, measurements take the cohort median
           </summary>
           <div className="mt-1">{result.imputed.map((k) => FIELD_LABEL[k] ?? k).join(", ")}</div>
         </details>
