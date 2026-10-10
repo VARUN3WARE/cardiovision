@@ -446,8 +446,8 @@ script, Devpost text, README and plan updated for the standout layer, story mode
    if wanted (docs/technical-documentation.md front matter) and rebuild.
 8. Fresh-clone test (train.py, make_presets.py, make_cohort.py, test_pipeline.py, npm test, npm run build), then
    the final push before 14 Oct EOD.
-9. Optional: printable patient report export; click a similar patient to load it; pass `info` from App to
-   HeartScene to drop its second /features request (needs the prop in HeartScene: lane A and lane B).
+9. Optional: printable patient report export; click a similar patient to load it. (Done: App passes `info` to
+   HeartScene, so the 3D view no longer makes its own /features request, d2eda6e.)
 
 ## 9. Key files to read first
 
