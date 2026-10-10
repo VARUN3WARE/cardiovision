@@ -227,6 +227,7 @@ export default function App() {
                 result={shown}
                 recorded={result}
                 metrics={metrics}
+                info={info}
                 highlight={highlight}
                 selected={selected}
                 onSelect={setSelected}
