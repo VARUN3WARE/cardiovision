@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ShapExplanation } from "../api/client";
 import { FEATURE_GROUPS } from "../featureLabels";
-import { DATA_GROUPS, DERIVED_GROUP, dataGroupOf, groupAttributions, groupWeight } from "./dataGroups";
+import {
+  DATA_GROUPS, DERIVED_GROUP, dataGroupOf, filledNote, groupAttributions, groupWeight, typicalColumns,
+} from "./dataGroups";
 import presets from "./__fixtures__/presetExplanations.json";
 
 type Fixture = Record<string, { probabilities: Record<string, number>; explanations: Record<string, ShapExplanation> }>;
@@ -77,6 +79,48 @@ describe("data-type groups", () => {
       }
     }
     expect(n).toBe(20);
+  });
+
+  it("marks inputs the form left empty (mapping schema keys to columns) with how the API filled them", () => {
+    const exp: ShapExplanation = {
+      base_value: 0.5,
+      feature_names: ["EF-TTE", "BP", "Age", "EF below 50", "Systolic BP 140+", "eGFR", "Region RWMA", "Q Wave"],
+      shap_values: [0.4, -0.1, 0.2, 0.3, -0.05, 0.1, 0.6, -0.2],
+      feature_values: [55, 125, 60, 0, 0, 80, 0, 0],
+      derived: [false, false, false, true, true, true, false, false],
+    };
+    const info = {
+      schema_to_column: { EF_TTE: "EF-TTE", RegionRWMA: "Region RWMA", QWave: "Q Wave" },
+      derived_sources: { "EF below 50": ["EF-TTE"], "Systolic BP 140+": ["BP"], eGFR: ["CR", "Age", "Sex"] },
+      feature_info: {
+        "EF-TTE": { type: "numeric", default: 55 }, BP: { type: "numeric", default: 130 },
+        "Q Wave": { type: "binary", default: 0 }, "Region RWMA": { type: "numeric", default: 0 },
+      },
+    } as unknown as Parameters<typeof typicalColumns>[2];
+    const filled = typicalColumns(exp, ["EF_TTE", "BP", "CR", "QWave"], info);
+    // Schema keys map to columns; a calculated score counts only if all its inputs were filled in.
+    expect([...filled.keys()].sort()).toEqual(["BP", "EF below 50", "EF-TTE", "Q Wave", "Systolic BP 140+"]);
+    // Measurements take the cohort median, findings count as absent (backend/app/schemas.py).
+    expect(filled.get("EF-TTE")).toBe("median");
+    expect(filled.get("Q Wave")).toBe("absent");
+    expect(filled.get("EF below 50")).toBe("derived");
+    // Without /features, keys that differ from their column are not recognised (so ExplanationPanel and the
+    // 3D view pass it, or fetch it).
+    expect(typicalColumns(exp, ["EF_TTE"], null).has("EF-TTE")).toBe(false);
+
+    const g = groupAttributions(exp, filled);
+    expect(g.inputs).toBe(5); // raw columns only
+    expect(g.filled).toBe(3); // EF-TTE, BP and Q Wave
+    const echo = g.groups.find((x) => x.id === "echo")!;
+    expect(echo.inputs).toBe(2);
+    expect(echo.filled).toBe(1);
+    expect(echo.findings.find((f) => f.name === "EF-TTE")?.fill).toBe("median");
+    expect(echo.findings.find((f) => f.name === "Region RWMA")?.fill).toBeNull();
+    expect(filledNote(g.filled, g.inputs)).toBe("3 of 5 inputs not entered");
+    expect(filledNote(0, 4)).toBe("");
+    // Flags never change the sums.
+    checkExact(exp);
+    expect(groupAttributions(exp).groups.every((x) => x.filled === 0)).toBe(true);
   });
 
   it("scales bars and streams in proportion to |log-odds|", () => {

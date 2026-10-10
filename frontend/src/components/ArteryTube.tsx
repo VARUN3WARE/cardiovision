@@ -139,6 +139,8 @@ export function VesselLabel({ vessel, name, position, p, color, selected, occlud
   return (
     <Html position={position} center distanceFactor={5} zIndexRange={[10, 0]} occlude={occluders}>
       <button
+        // The reasoning view keeps its towers clear of these labels.
+        data-vessel-label={vessel}
         // Stop the DOM event reaching the canvas, which would treat it as a missed click.
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {

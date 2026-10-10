@@ -17,7 +17,7 @@ import { RING_SIZE, TICK, heartClock, readTick, ventricularContraction, type Bea
 import { ARTERY_PHYSIOLOGY, LEFT_MAIN_DSVR, phasicMean, type LabState } from "../twin/coronaryPhysiology";
 import { useHeartMotion } from "../twin/useHeartMotion";
 import { UNMODELLED, VESSEL, VESSELS, VESSEL_IDS, type Vessel } from "../anatomy/registry";
-import { FlowAnchor } from "../reasoning/anchors";
+import { FlowAnchor, supportHull } from "../reasoning/anchors";
 
 /** Which chest layers to draw around the heart. */
 export interface ChestLayers {
@@ -195,6 +195,13 @@ export default function AtlasHeart(props: Props) {
   useLayoutEffect(() => {
     LAB.uLabPivot.value.copy(pivots.vent);
   }, [pivots]);
+  // Cardiac mass (ventricles and atria, not the great vessels): the reasoning view's halo and tower clearance.
+  const cardiac = useMemo(() => supportHull(
+    ["ventricles", "atria"].flatMap((k) => {
+      const g = atlas.parts.find((p) => p.key === k)?.geometry;
+      return g ? [{ positions: g.getAttribute("position") }] : [];
+    }),
+  ), [atlas]);
 
   // Function twin: ventricles squeeze with the patient's EF, atria kick after the P wave, the great
   // arteries distend with ejection; in LBBB the ventricles rock (septum early, lateral wall late).
@@ -220,7 +227,7 @@ export default function AtlasHeart(props: Props) {
     <TipContext.Provider value={tipApi}>
       <group ref={root} scale={ATLAS_SCALE}>
         <HoverTip setter={tipSetter} />
-        <FlowAnchor id="heart" position={pivots.vent} />
+        <FlowAnchor id="heart" position={cardiac.centre} hull={cardiac.hull} />
         <Pivoted at={pivots.vent} innerRef={vent}>
           <Wall part={wall} atlas={atlas} meshRef={wallRef} probs={probs} selected={selected} focus={labOn ? null : selected ?? hovered} mode={labOn ? "arteries" : mode} xray={xray} lab={labOn} onSelect={onSelect} onPick={onPick} />
           {part("cardiac_veins") && <CardiacVeins part={part("cardiac_veins")!} />}

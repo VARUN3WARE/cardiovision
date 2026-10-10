@@ -2,23 +2,26 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Bvh, ContactShadows, Environment, Lightformer, OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import AtlasHeart, { type AtlasLab, type AtlasPick, type ChestLayers } from "./AtlasHeart";
 import ErrorBoundary from "./ErrorBoundary";
-import VesselInspector from "./VesselInspector";
+import VesselInspector, { VesselChip } from "./VesselInspector";
 import EcgMonitor from "../twin/EcgMonitor";
 import { advanceClock, beatTiming, twinFromResult, type BeatTiming, type TwinParams } from "../twin/twin";
 import { useHeartMotion } from "../twin/useHeartMotion";
 import { VESSEL, VESSEL_IDS } from "../anatomy/registry";
-import ReasoningFlow from "../reasoning/ReasoningFlow";
-import { FlowAnchor } from "../reasoning/anchors";
+import ReasoningFlow, { type OverlayRect, type ReasoningFrame } from "../reasoning/ReasoningFlow";
+import { groupAttributions, sigmoid, typicalColumns } from "../reasoning/dataGroups";
+import { useFeatureInfo } from "../reasoning/featureInfo";
+import { reasoningHover } from "../reasoning/hoverStore";
+import { FlowAnchor, supportHull } from "../reasoning/anchors";
 import LabPanel, { LabBanner, LabLegend } from "../lab/LabPanel";
 import { LAB_DEFAULT, baselineText, labFromQuery, labPatient, labTwin, type LabSettings } from "../lab/labState";
 import { labState } from "../twin/coronaryPhysiology";
-import type { ExplainResponse, MetricsResponse } from "../api/client";
+import type { ExplainResponse, FeaturesResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
 import { ATLAS_CREDIT, atlasAvailable } from "./atlasAnatomy";
@@ -90,9 +93,16 @@ interface HeartSceneProps {
   probs: ArteryProbs | null;
   /** Inputs changed since these estimates were computed. */
   pending?: boolean;
-  /** Full results and validation metrics, for the vessel inspector. */
+  /** Full results shown by the colours, inspector and reasoning streams (a what-if scenario's while one is on). */
   result?: ExplainResponse | null;
+  /**
+   * The patient's own recorded result. The function twin (heartbeat, ECG), the lab's starting values and the
+   * wall-motion note always use it; when it differs from `result`, a what-if scenario is on.
+   */
+  recorded?: ExplainResponse | null;
   metrics?: MetricsResponse | null;
+  /** /features, to label typical (not entered) values in the reasoning view (fetched when not given). */
+  info?: FeaturesResponse | null;
   /** Artery highlighted from outside the scene (e.g. hovering the bullseye). */
   highlight?: Vessel | null;
   selected: Vessel | null;
@@ -101,8 +111,11 @@ interface HeartSceneProps {
 }
 
 export default function HeartScene({
-  probs, pending = false, result = null, metrics = null, highlight = null, selected, onSelect, bpm,
+  probs, pending = false, result = null, recorded, metrics = null, info, highlight = null, selected, onSelect, bpm,
 }: HeartSceneProps) {
+  // What the patient's own heart does: the recorded result, never a scenario's hypothetical inputs.
+  const patient = recorded ?? result;
+  const whatIf = recorded != null && result != null && recorded !== result;
   const [mode, setMode] = useState<ViewMode>("arteries");
   const [beating, setBeating] = useState(true);
   const [showEcg, setShowEcg] = useState(true);
@@ -111,9 +124,10 @@ export default function HeartScene({
   const [labSettings, setLabSettings] = useState<LabSettings>(() => labFromQuery(window.location.search) ?? LAB_DEFAULT);
   // The chest view to restore when the lab closes (shown by default, so also after a lab deep link).
   const chestBeforeLab = useRef<boolean | null>(labFromQuery(window.location.search) ? true : null);
-  // Reasoning flow (deep link: ?reasoning=1, optionally &model=lad|lcx|rca). The lab takes precedence.
-  const [reasoning, setReasoning] = useState(() =>
-    new URLSearchParams(window.location.search).get("reasoning") === "1" && labFromQuery(window.location.search) === null);
+  // Reasoning flow (deep link: ?reasoning=1, optionally &model=lad|lcx|rca). The lab takes precedence. It
+  // hides the chest (the streams need a clear background); the chest comes back when it closes.
+  const [reasoning, setReasoning] = useState(reasoningFromQuery);
+  const chestBeforeReasoning = useRef<boolean | null>(reasoningFromQuery() ? true : null);
   const [fx, setFx] = useState(true);
   const [pins, setPins] = useState(false);
   const [hovered, setHovered] = useState<Vessel | null>(null);
@@ -128,19 +142,32 @@ export default function HeartScene({
   const [atlasOk, setAtlasOk] = useState<boolean | null>(null);
   const [atlasFailed, setAtlasFailed] = useState(false);
   const [atlasViews, setAtlasViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
-  const [chest, setChest] = useState(() => labFromQuery(window.location.search) === null);
+  const [chest, setChest] = useState(() => labFromQuery(window.location.search) === null && !reasoningFromQuery());
   const [layers, setLayers] = useState<ChestLayers>({ skin: true, skeleton: true, organs: true });
   const [layerMenu, setLayerMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
   const [xray, setXray] = useState(false);
   const [pick, setPick] = useState<AtlasPick | null>(null);
   const [view, setView] = useState<{ dir: THREE.Vector3; n: number } | null>(null);
-  // Opening straight into the atlas (deep link) starts with the chest fly-in too (not into the lab: no chest there).
+  // Opening straight into the atlas (deep link) starts with the chest fly-in too (not into the lab or the
+  // reasoning view: no chest there).
   const [fly, setFly] = useState<{ from: number; to: number; n: number } | null>(() =>
-    initialModel() === "atlas" && !reducedMotion() && labFromQuery(window.location.search) === null
+    initialModel() === "atlas" && !reducedMotion() && labFromQuery(window.location.search) === null && !reasoningFromQuery()
       ? { from: CHEST_DISTANCE, to: HEART_DISTANCE, n: 1 } : null);
+  // Narrow views: the selected artery shows as a one-line chip until "details" opens the full card.
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Zoomed in so far that some reasoning streams would end off screen (they are hidden).
+  const [streamsOffscreen, setStreamsOffscreen] = useState(false);
+  useEffect(() => setInspectorOpen(false), [selected]);
   const viewRef = useRef<HTMLDivElement>(null);
   const { width: viewWidth, height: viewHeight } = useElementSize(viewRef);
+  // DOM overlays the 3D labels and cards must avoid (toolbar, notices column, legend, view buttons).
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const noticesRef = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
+  const viewsRef = useRef<HTMLDivElement>(null);
+  const creditRef = useRef<HTMLDivElement>(null);
+  const overlay = useOverlayLayout(viewRef, toolbarRef, noticesRef, [legendRef, viewsRef, creditRef]);
 
   useEffect(() => {
     specimenAvailable().then(setAvailable);
@@ -167,12 +194,13 @@ export default function HeartScene({
     if (m === "atlas" && chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
   };
   const showPick = pick && (pick.vessel === "lm" || pick.vessel === selected) ? pick : null;
-  // Function twin: the patient's recorded pulse, EF, blood pressure and ECG findings drive the heart.
-  const twin = useMemo(() => twinFromResult(result, bpm), [result, bpm]);
+  // Function twin: the patient's recorded pulse, EF, blood pressure and ECG findings drive the heart (also while
+  // a what-if scenario colours the arteries: the heartbeat and ECG never show hypothetical inputs).
+  const twin = useMemo(() => twinFromResult(patient, bpm), [patient, bpm]);
   // Ischaemia lab: the patient's resting pulse, systolic BP and age plus a generic sandbox narrowing. While it
   // runs, the twin beats at the lab's exercise rate and the monitor shows the lab's ST depression (marked "lab").
   const labActive = labOn && useAtlas;
-  const labIn = useMemo(() => labPatient(result, twin), [result, twin]);
+  const labIn = useMemo(() => labPatient(patient, twin), [patient, twin]);
   const lab = useMemo(
     () => (labActive ? labState(labSettings.vessel, labSettings.narrowing / 100, labSettings.exercise, labIn) : null),
     [labActive, labSettings, labIn],
@@ -181,17 +209,24 @@ export default function HeartScene({
   const shownTwin = useMemo(() => (lab ? labTwin(twin, lab) : twin), [lab, twin]);
   const timing = useMemo(() => beatTiming(shownTwin), [shownTwin]);
   const labSide = viewWidth >= LAB_SIDE_MIN_W;
-  // Narrow 3D view (e.g. 1024 px windows): tighter toolbar, with X-ray, HD and Reset in a "⋯" menu.
+  // Narrow 3D view (e.g. 1024 px windows): tighter toolbar, with X-ray, HD and Reset in a "⋯" menu, and the
+  // reasoning view's data types as chips above and below the heart.
   const compact = viewWidth > 0 && viewWidth < 520;
+  // Too narrow for the full vessel card beside the heart: a one-line chip until "details" is clicked.
+  const narrowCard = viewWidth > 0 && viewWidth < 420;
   const pad = compact ? "px-1.5" : "px-2";
 
   const openLab = () => {
-    setReasoning(false);
+    if (reasoning) {
+      setReasoning(false);
+      if (chestBeforeReasoning.current !== null) setChest(chestBeforeReasoning.current);
+    }
     setPick(null);
     setShowEcg(true);
     if (model !== "atlas") setModel("atlas");
     // The lab needs a clear view of the heart: the chest comes back when the lab closes.
-    chestBeforeLab.current = chest;
+    chestBeforeLab.current = reasoning ? chestBeforeReasoning.current ?? chest : chest;
+    chestBeforeReasoning.current = null;
     setChest(false);
     setFly(null);
     setLabOn(true);
@@ -201,6 +236,25 @@ export default function HeartScene({
     if (chestBeforeLab.current !== null) setChest(chestBeforeLab.current);
     chestBeforeLab.current = null;
   }
+  const toggleReasoning = () => {
+    if (reasoning) {
+      setReasoning(false);
+      if (chestBeforeReasoning.current !== null) setChest(chestBeforeReasoning.current);
+      chestBeforeReasoning.current = null;
+      return;
+    }
+    chestBeforeReasoning.current = labOn ? chestBeforeLab.current ?? chest : chest;
+    if (labOn) closeLab();
+    setChest(false);
+    setFly(null);
+    setReasoning(true);
+  };
+  // A click on empty space (or on a reasoning stream with nothing behind it) clears the selection.
+  const background = () => {
+    select(null);
+    setPick(null);
+    reasoningHover.set(null);
+  };
   // In the lab, clicking an artery or a wall moves the sandbox narrowing there (the patient's selection is untouched).
   const select = (v: Vessel | null) => {
     if (labActive) {
@@ -215,11 +269,43 @@ export default function HeartScene({
     if (!labActive || !labViews) return;
     setView((cur) => ({ dir: labViews[labSettings.vessel].clone(), n: (cur?.n ?? 0) + 1 }));
   }, [labActive, labViews, labSettings.vessel]);
+  // The patient's recorded wall-motion grade (a what-if contrast changes the model's input, not the record).
   const rwma = useMemo(() => {
-    const exp = result?.explanations.cad;
+    const exp = patient?.explanations.cad;
     const i = exp ? exp.feature_names.indexOf("Region RWMA") : -1;
     return exp && i >= 0 ? exp.feature_values[i] : null;
-  }, [result]);
+  }, [patient]);
+
+  // Reasoning view: the shown result's attributions for the selected model, with typical fill-in values marked.
+  const target = selected ?? "cad";
+  const features = useFeatureInfo(info, reasoning && result !== null, result);
+  const reasoningExp = result?.explanations[target] ?? null;
+  const typical = useMemo(
+    () => (result && reasoningExp ? typicalColumns(reasoningExp, result.imputed, features) : null),
+    [result, reasoningExp, features],
+  );
+  // During a what-if drag, fresh probabilities arrive before their explanation: the streams then trail them.
+  const explained = reasoningExp ? sigmoid(groupAttributions(reasoningExp).logOdds) : null;
+  const lagging = !!result && explained !== null && Math.abs(explained - result.results[target].probability) > 1e-4;
+  const reasoningFrame = useMemo<ReasoningFrame>(
+    () => ({ top: overlay.toolbar, notices: overlay.notices, bottoms: overlay.bottoms }),
+    [overlay],
+  );
+  const belowNotices = (overlay.notices?.bottom ?? overlay.toolbar) + 6;
+  // The legend shrinks to the band scale while the reasoning view (or a narrow view's vessel card) needs the room.
+  const legendCollapsed = reasoning || (narrowCard && !!selected && inspectorOpen);
+  const stackViews = viewWidth > 0 && viewWidth < 12 + (legendCollapsed ? 208 : 240) + 8 + 78 + 12;
+  // Model credit (for the atlas also the reference-anatomy caveat): bottom right, or under the legend when narrow.
+  const creditInLegend = compact && !labActive;
+  const credit = useAtlas ? (
+    <a href={ATLAS_CREDIT.url} target="_blank" rel="noreferrer" className="block text-[9px] leading-tight text-gray-500 hover:text-gray-300">
+      Reference anatomy, not this patient&apos;s imaging. Right dominance assumed. {ATLAS_CREDIT.text}
+    </a>
+  ) : useSpecimen ? (
+    <a href={SPECIMEN_CREDIT.url} target="_blank" rel="noreferrer" className="block text-[9px] leading-tight text-gray-500 hover:text-gray-300">
+      Heart model: “{SPECIMEN_CREDIT.title}” by {SPECIMEN_CREDIT.author}, {SPECIMEN_CREDIT.license}
+    </a>
+  ) : null;
 
   const xrayButton = useAtlas && (
     <button
@@ -240,6 +326,16 @@ export default function HeartScene({
       {fx ? "HD on" : "HD off"}
     </button>
   );
+  const viewButtons = ANATOMICAL_VIEWS.map((v) => (
+    <button
+      key={v.key}
+      title={v.title}
+      onClick={() => setView((cur) => ({ dir: new THREE.Vector3(...v.dir).normalize(), n: (cur?.n ?? 0) + 1 }))}
+      className="h-6 w-6 rounded bg-slate-900/80 text-[10px] font-semibold text-gray-300 hover:bg-slate-700"
+    >
+      {v.key}
+    </button>
+  ));
   const resetButton = (
     <button
       onClick={() => {
@@ -266,10 +362,7 @@ export default function HeartScene({
         camera={{ position: [0, 0.1, 6.8], fov: 40 }}
         dpr={[1, 1.5]}
         gl={{ antialias: !fx }}
-        onPointerMissed={() => {
-          select(null);
-          setPick(null);
-        }}
+        onPointerMissed={background}
       >
         <color attach="background" args={["#141a26"]} />
         <TwinClock timing={timing} running={beating} />
@@ -353,11 +446,17 @@ export default function HeartScene({
           </EffectComposer>
         )}
 
-        {reasoning && result && (
+        {reasoning && reasoningExp && (
           <ReasoningFlow
-            exp={result.explanations[selected ?? "cad"]}
-            target={selected ?? "cad"}
-            probability={result.results[selected ?? "cad"].probability}
+            exp={reasoningExp}
+            target={target}
+            typical={typical}
+            stale={pending || lagging}
+            whatIf={whatIf}
+            frame={reasoningFrame}
+            narrow={compact}
+            onBackgroundClick={background}
+            onOffscreen={setStreamsOffscreen}
           />
         )}
 
@@ -387,7 +486,7 @@ export default function HeartScene({
       )}
 
       {/* View controls */}
-      <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1 text-xs">
+      <div ref={toolbarRef} className="absolute left-3 top-3 z-20 flex flex-wrap gap-1 text-xs">
         {models.length > 1 && (
           <div className="mr-1 flex overflow-hidden rounded" role="radiogroup" aria-label="Heart model">
             {models.map((m) => (
@@ -418,6 +517,7 @@ export default function HeartScene({
             <button
               onClick={() => {
                 if (!chest && !reducedMotion()) setFly((f) => ({ from: CHEST_DISTANCE, to: HEART_DISTANCE, n: (f?.n ?? 0) + 1 }));
+                chestBeforeReasoning.current = null; // the user's own choice stays when the reasoning view closes
                 setChest((c) => !c);
               }}
               aria-pressed={chest}
@@ -448,6 +548,7 @@ export default function HeartScene({
                         checked={layers[k]}
                         onChange={() => {
                           setLayers((l) => ({ ...l, [k]: !l[k] }));
+                          chestBeforeReasoning.current = null;
                           setChest(true);
                         }}
                       />
@@ -485,10 +586,7 @@ export default function HeartScene({
           ECG
         </button>
         <button
-          onClick={() => {
-            if (!reasoning && labOn) closeLab();
-            setReasoning((r) => !r);
-          }}
+          onClick={toggleReasoning}
           aria-pressed={reasoning}
           className={`rounded ${pad} py-1 ${reasoning ? "bg-violet-700 text-white" : "bg-slate-900/80 text-gray-300 hover:bg-slate-700"}`}
           title="Show how much each data type (history, symptoms, ECG, echo, labs, pre-test score) moved the selected model's estimate"
@@ -511,13 +609,14 @@ export default function HeartScene({
               onClick={() => setMoreMenu((m) => !m)}
               aria-expanded={moreMenu}
               aria-label="More view controls"
-              title={useAtlas ? "X-ray, HD and Reset" : "HD and Reset"}
+              title={useAtlas ? "Standard views, X-ray, HD and Reset" : "Standard views, HD and Reset"}
               className="rounded bg-slate-900/80 px-1.5 py-1 text-gray-300 hover:bg-slate-700"
             >
               ⋯
             </button>
             {moreMenu && (
               <div className="absolute right-0 top-7 z-20 flex flex-col gap-1 rounded bg-slate-900/95 p-1.5 shadow-lg" onMouseLeave={() => setMoreMenu(false)}>
+                <div role="group" aria-label="Standard views" className="grid grid-cols-3 gap-0.5">{viewButtons}</div>
                 {xrayButton}
                 {hdButton}
                 {resetButton}
@@ -532,18 +631,56 @@ export default function HeartScene({
         )}
       </div>
 
-      {pending && probs && (
-        <div role="status" className="absolute left-1/2 top-12 -translate-x-1/2 rounded bg-amber-950/90 px-2 py-1 text-[10px] text-amber-200">
-          Inputs changed: colours show the previous estimate
-        </div>
-      )}
+      {/* Notices under the toolbar, stacked in one centred column so they never cover it or each other. */}
+      <div
+        ref={noticesRef}
+        className="pointer-events-none absolute inset-x-3 z-10 flex flex-col items-center gap-1"
+        style={{ top: overlay.toolbar + 6 }}
+      >
+        {pending && probs && (
+          <div role="status" className="rounded bg-amber-950/90 px-2 py-1 text-[10px] text-amber-200">
+            Inputs changed: colours show the previous estimate
+          </div>
+        )}
+        {whatIf && !labActive && (
+          <div role="note" className="max-w-full rounded border border-sky-700/70 bg-sky-950/90 px-2 py-1 text-center text-[10px] leading-snug text-sky-100">
+            What-if: colours show the scenario; heartbeat and ECG show recorded values
+          </div>
+        )}
+        {reasoning && (
+          <ReasoningCaption
+            result={result}
+            selected={selected}
+            explained={explained}
+            whatIf={whatIf}
+            stale={pending ? "previous estimate" : lagging ? "updating" : streamsOffscreen ? "zoom out to see every stream" : null}
+            narrow={compact}
+          />
+        )}
+        {selected && result && !labActive && (reasoning || (narrowCard && !inspectorOpen)) && (
+          <VesselChip
+            vessel={selected}
+            result={result}
+            metrics={metrics}
+            onClose={() => {
+              onSelect(null);
+              setPick(null);
+            }}
+            onDetails={() => {
+              if (reasoning) toggleReasoning();
+              setInspectorOpen(true);
+            }}
+            detailsTitle={reasoning ? "Close Reasoning and show this artery's details" : "Show this artery's details"}
+          />
+        )}
+      </div>
 
       {labActive && (
         <>
           {labSide && (
             <LabBanner
-              className="absolute top-[4.5rem] z-20 max-w-[min(92%,440px)] -translate-x-1/2"
-              style={{ left: `calc((100% - ${LAB_PANEL_W + 12}px) / 2)` }}
+              className="absolute z-20 max-w-[min(92%,440px)] -translate-x-1/2"
+              style={{ left: `calc((100% - ${LAB_PANEL_W + 12}px) / 2)`, top: belowNotices }}
             />
           )}
           {lab && (
@@ -552,103 +689,103 @@ export default function HeartScene({
               onChange={setLabSettings}
               state={lab}
               patient={labIn}
-              baseline={baselineText(result, twin, labIn)}
+              baseline={baselineText(patient, twin, labIn)}
               stReadable={twin.bbb !== "LBBB"}
               onClose={closeLab}
-              className={labSide ? "absolute bottom-3 right-3 top-[4.5rem] z-20" : "absolute inset-x-2 bottom-2 z-20 max-h-[52%]"}
-              style={labSide ? { width: LAB_PANEL_W } : undefined}
+              className={labSide ? "absolute bottom-3 right-3 z-20" : "absolute inset-x-2 bottom-2 z-20 max-h-[52%]"}
+              style={labSide ? { width: LAB_PANEL_W, top: overlay.toolbar + 6 } : undefined}
               banner={!labSide}
             />
           )}
         </>
       )}
 
-      {/* Anatomical view buttons */}
-      <div
-        className="absolute bottom-12 right-3 grid grid-cols-3 gap-0.5 text-[10px]"
-        style={labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 1.75rem)" }) : undefined}
-        role="group"
-        aria-label="Standard views"
-      >
-        {ANATOMICAL_VIEWS.map((v) => (
-          <button
-            key={v.key}
-            title={v.title}
-            onClick={() => setView((cur) => ({ dir: new THREE.Vector3(...v.dir).normalize(), n: (cur?.n ?? 0) + 1 }))}
-            className="h-6 w-6 rounded bg-slate-900/80 font-semibold text-gray-300 hover:bg-slate-700"
-          >
-            {v.key}
-          </button>
-        ))}
-      </div>
+      {/* Anatomical view buttons (in the "⋯" menu in narrow views) */}
+      {!compact && (
+        <div
+          ref={viewsRef}
+          className="absolute bottom-12 right-3 z-20 grid grid-cols-3 gap-0.5"
+          style={labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 1.75rem)" }) : stackViews ? { bottom: overlay.legend + 6 } : undefined}
+          role="group"
+          aria-label="Standard views"
+        >
+          {viewButtons}
+        </div>
+      )}
 
-      {reasoning && <ReasoningCaption result={result} selected={selected} />}
-
-      {/* Selected vessel: inspector card (hidden while the reasoning towers or the lab use that space); a
-          clicked left-main branch gets a short note instead. */}
+      {/* Selected vessel: inspector card below the notices, above the bottom controls (in narrow views a chip in
+          the notices column until "details"; hidden while the reasoning view or the lab use that space); a clicked
+          left-main branch gets a short note instead. */}
       {reasoning || labActive ? null : selected ? (
-        <VesselInspector
-          vessel={selected}
-          result={result}
-          metrics={metrics}
-          pick={showPick}
-          onClose={() => {
-            onSelect(null);
-            setPick(null);
-          }}
-        />
+        narrowCard && !inspectorOpen ? null : (
+          <VesselInspector
+            vessel={selected}
+            result={result}
+            metrics={metrics}
+            pick={showPick}
+            onClose={() => {
+              onSelect(null);
+              setPick(null);
+            }}
+            style={{
+              top: belowNotices,
+              width: Math.min(270, Math.max(180, viewWidth - 24)),
+              maxHeight: Math.max(120, viewHeight - belowNotices - (narrowCard ? Math.max(overlay.legend, overlay.views) : overlay.views) - 6),
+            }}
+          />
+        )
       ) : showPick?.vessel === "lm" && (
-        <div className="absolute right-3 top-12 max-w-[260px] rounded bg-slate-900/90 p-3 text-xs text-gray-300">
+        <div className="absolute right-3 z-20 max-w-[260px] rounded bg-slate-900/90 p-3 text-xs text-gray-300" style={{ top: belowNotices }}>
           <div className="text-white first-letter:uppercase">{showPick.branch.name}</div>
           <div className="text-gray-500">{showPick.branch.fma} · BodyParts3D {showPick.branch.fj}</div>
           <div className="mt-1 text-gray-400">Left main: not labelled in this dataset, so no model output; shown neutral.</div>
         </div>
       )}
 
-      {useAtlas && (
-        <a
-          href={ATLAS_CREDIT.url}
-          target="_blank"
-          rel="noreferrer"
-          className="absolute bottom-3 right-3 max-w-[240px] text-right text-[9px] leading-tight text-gray-500 hover:text-gray-300"
-          style={labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 0.5rem)" }) : undefined}
+      {credit && !creditInLegend && (
+        <div
+          ref={creditRef}
+          className={`absolute bottom-3 right-3 ${useAtlas ? "max-w-[240px]" : "max-w-[220px]"} text-right`}
+          style={useAtlas && labActive ? (labSide ? { right: LAB_PANEL_W + 24 } : { bottom: "calc(52% + 0.5rem)" }) : undefined}
         >
-          Reference anatomy, not this patient&apos;s imaging. Right dominance assumed. {ATLAS_CREDIT.text}
-        </a>
+          {credit}
+        </div>
       )}
 
-      {useSpecimen && (
-        <a
-          href={SPECIMEN_CREDIT.url}
-          target="_blank"
-          rel="noreferrer"
-          className="absolute bottom-3 right-3 max-w-[220px] text-right text-[9px] leading-tight text-gray-500 hover:text-gray-300"
-        >
-          Heart model: “{SPECIMEN_CREDIT.title}” by {SPECIMEN_CREDIT.author}, {SPECIMEN_CREDIT.license}
-        </a>
-      )}
-
-      {/* Legend (the lab has its own: its arteries show the sandbox, not the estimates) */}
+      {/* Legend (the lab has its own: its arteries show the sandbox, not the estimates). While the reasoning view
+          (or a narrow view's vessel card) needs the room, only the band scale. */}
       {labActive ? (
         labSide && (
-          <div className="absolute bottom-3 left-3 z-20 w-56">
+          <div ref={legendRef} className="absolute bottom-3 left-3 z-20 w-56">
             <LabLegend />
           </div>
         )
       ) : (
-      <div className="absolute bottom-3 left-3 z-20 w-60 text-[10px] text-gray-400">
-        <MapSemantics rwma={rwma} />
-        {mode === "territories" && (
-          <div className="mb-2 rounded bg-slate-900/80 p-1.5 text-gray-300">
-            Muscle shaded by the artery that usually supplies it (standard anatomy, right dominance assumed).
-            Illustrative: not a perfusion or wall-motion map.
+      <div
+        ref={legendRef}
+        className={`absolute bottom-3 left-3 z-20 ${legendCollapsed ? "w-52" : "w-60"} max-w-[calc(100%-1.5rem)] text-[10px] text-gray-400`}
+      >
+        {legendCollapsed ? (
+          <div className="mb-1 text-gray-300">
+            {probs ? (compact ? "Chance of ≥50% narrowing per artery" : "Chance of ≥50% narrowing · one colour per artery") : "Run a prediction to colour the arteries"}
           </div>
+        ) : (
+          <>
+            <MapSemantics rwma={rwma} short={compact} />
+            {mode === "territories" && (
+              <div className="mb-2 rounded bg-slate-900/80 p-1.5 text-gray-300">
+                Muscle shaded by the artery that usually supplies it (standard anatomy, right dominance assumed).
+                Illustrative: not a perfusion or wall-motion map.
+              </div>
+            )}
+            {!compact && <div className="mb-2 text-gray-500">Drag to rotate · scroll to zoom · click an artery or heart wall</div>}
+            <div className="mb-1 text-gray-300">
+              {probs ? "Chance of ≥50% narrowing in each artery (not % blocked)" : "Run a prediction to colour the arteries"}
+            </div>
+          </>
         )}
-        <div className="mb-2 text-gray-500">Drag to rotate · scroll to zoom · click an artery or heart wall</div>
-        <div className="mb-1 text-gray-300">
-          {probs ? "Chance of ≥50% narrowing in each artery (not % blocked)" : "Run a prediction to colour the arteries"}
-        </div>
         <BandLegend />
+        {credit && creditInLegend && <div className="mt-1.5">{credit}</div>}
       </div>
       )}
     </div>
@@ -737,6 +874,71 @@ function useElementSize(ref: RefObject<HTMLElement>) {
   return size;
 }
 
+interface OverlayLayout {
+  /** Bottom of the toolbar (px from the top of the 3D view). */
+  toolbar: number;
+  /** The centred notices column, when it shows anything. */
+  notices: OverlayRect | null;
+  /** Overlays along the bottom edge: legend, view buttons, credit line. */
+  bottoms: OverlayRect[];
+  /** Tops of the legend and of the view buttons, as px from the bottom of the 3D view. */
+  legend: number;
+  views: number;
+}
+
+const rectOf = (el: HTMLElement | null): OverlayRect | null =>
+  el && el.offsetWidth > 0
+    ? { left: el.offsetLeft, right: el.offsetLeft + el.offsetWidth, top: el.offsetTop, bottom: el.offsetTop + el.offsetHeight }
+    : null;
+
+/**
+ * Where the 3D view's DOM overlays are, kept up to date (after every render, as positions follow state, and on
+ * resizes), so the reasoning towers, captions and cards can stay clear of them.
+ */
+function useOverlayLayout(
+  view: RefObject<HTMLElement>,
+  toolbar: RefObject<HTMLElement>,
+  notices: RefObject<HTMLElement>,
+  bottomRefs: RefObject<HTMLElement>[],
+): OverlayLayout {
+  const [layout, setLayout] = useState<OverlayLayout>({ toolbar: 64, notices: null, bottoms: [], legend: 0, views: 0 });
+  const read = useCallback(() => {
+    const v = view.current;
+    if (!v) return;
+    const H = v.clientHeight;
+    const t = toolbar.current, n = notices.current;
+    let box: OverlayRect | null = null;
+    if (n && n.childElementCount > 0) {
+      let left = Infinity, right = -Infinity;
+      for (const c of Array.from(n.children) as HTMLElement[]) {
+        left = Math.min(left, n.offsetLeft + c.offsetLeft);
+        right = Math.max(right, n.offsetLeft + c.offsetLeft + c.offsetWidth);
+      }
+      box = { left, right, top: n.offsetTop, bottom: n.offsetTop + n.offsetHeight };
+    }
+    const rects = bottomRefs.map((r) => rectOf(r.current));
+    const [legendRect, viewsRect] = rects;
+    const next: OverlayLayout = {
+      toolbar: t ? t.offsetTop + t.offsetHeight : 0,
+      notices: box,
+      bottoms: rects.filter((r): r is OverlayRect => r !== null),
+      legend: legendRect ? H - legendRect.top : 0,
+      views: viewsRect ? H - viewsRect.top : 0,
+    };
+    setLayout((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, toolbar, notices, ...bottomRefs]);
+  useLayoutEffect(() => read());
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => read());
+    for (const r of [view, toolbar, notices, ...bottomRefs]) if (r.current) ro.observe(r.current);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [read, view, toolbar, notices, ...bottomRefs]);
+  return layout;
+}
+
 /** Pull the camera back on narrow canvases so the whole heart stays in frame. */
 function FitCamera() {
   const { camera, size } = useThree();
@@ -752,12 +954,16 @@ function FitCamera() {
  * What the map does and does not show (the brief: clinical and ECG findings are not anatomical
  * coordinates, and wall-motion data is not a lesion map). Always visible, with the rules on demand.
  */
-function MapSemantics({ rwma }: { rwma: number | null }) {
+function MapSemantics({ rwma, short = false }: { rwma: number | null; short?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="mb-2 space-y-1">
       <div className="flex items-start gap-1 rounded bg-slate-900/80 p-1.5 text-gray-300">
-        <span>Vessel-level estimates: one colour per artery. Position along the artery is not predicted.</span>
+        <span>
+          {short
+            ? "One colour per artery: position along it is not predicted."
+            : "Vessel-level estimates: one colour per artery. Position along the artery is not predicted."}
+        </span>
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
@@ -779,8 +985,14 @@ function MapSemantics({ rwma }: { rwma: number | null }) {
       )}
       {rwma !== null && rwma > 0 && (
         <div className="rounded bg-slate-900/80 p-1.5 text-gray-300">
-          Regional wall-motion abnormality grade {rwma} of 4: where it is was not recorded in the data, so it is
-          not drawn on the heart.
+          {short ? (
+            <>Wall-motion abnormality grade {rwma} of 4: where is not recorded, so not drawn.</>
+          ) : (
+            <>
+              Regional wall-motion abnormality grade {rwma} of 4: where it is was not recorded in the data, so it is
+              not drawn on the heart.
+            </>
+          )}
         </div>
       )}
     </div>
@@ -789,22 +1001,54 @@ function MapSemantics({ rwma }: { rwma: number | null }) {
 
 /**
  * Reasoning view caption: which model's evidence is flowing where, and what the streams are (and are not).
+ * Narrow views show one line, with the rest behind (i).
  */
-function ReasoningCaption({ result, selected }: { result: ExplainResponse | null; selected: Vessel | null }) {
-  const target = selected ? `${VESSEL[selected].label} model → ${VESSEL[selected].label} label` : "Overall CAD model → whole heart";
+function ReasoningCaption({ result, selected, explained, whatIf, stale, narrow }: {
+  result: ExplainResponse | null;
+  selected: Vessel | null;
+  /** The probability the shown attributions add up to. */
+  explained: number | null;
+  whatIf: boolean;
+  /** Why the streams are dimmed, if they are. */
+  stale: string | null;
+  narrow: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const pct = explained !== null ? ` (${formatPct(explained)})` : "";
+  const target = selected
+    ? `${VESSEL[selected].label} model → ${VESSEL[selected].label} label`
+    : `${narrow ? "CAD" : "Overall CAD"} model${pct} → whole heart`;
   return (
     <div
       role="note"
-      className="pointer-events-none absolute left-1/2 top-[4.25rem] z-10 w-max max-w-[min(92%,420px)] -translate-x-1/2 rounded bg-slate-900/85 px-2.5 py-1.5 text-center text-[10px] leading-snug text-gray-300 shadow"
+      className="w-max max-w-full rounded bg-slate-900/85 px-2.5 py-1 text-center text-[10px] leading-snug text-gray-300 shadow sm:max-w-[min(100%,440px)]"
     >
       <div className="font-semibold text-white">
         Reasoning: {result ? target : "run an estimate to see the evidence"}
+        {result && whatIf && <span className="font-normal text-sky-300"> (what-if inputs)</span>}
+        {result && stale && <span className="font-normal text-amber-300"> · {stale}</span>}
+        {narrow && <span className="font-normal text-gray-300"> · data, not anatomy</span>}
+        {narrow && (
+          <button
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-label="What the streams show"
+            className="pointer-events-auto ml-1 rounded-full border border-gray-500 px-1 font-normal leading-tight text-gray-300 hover:bg-slate-700"
+          >
+            i
+          </button>
+        )}
       </div>
-      <div>Data streams, not anatomy: width = how much each data type moved this estimate</div>
-      <div className="text-gray-400">
-        <span className="text-red-400">red pushes up</span> · <span className="text-sky-400">blue pulls down</span> ·
-        associations in this referral cohort, not causes · hover a tower for its findings
-      </div>
+      {(!narrow || open) && (
+        <>
+          <div>Data streams, not anatomy: width = how much each data type moved this estimate</div>
+          <div className="text-gray-400">
+            <span className="text-red-400">red pushes up</span> · <span className="text-sky-400">blue pulls down</span> ·
+            grey ≈ little effect · associations in this referral cohort, not causes · hover or tap a data type for its
+            findings
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -842,6 +1086,10 @@ function initialModel(): HeartModel {
   if (labFromQuery(window.location.search)) return "atlas"; // the lab runs on the Atlas heart
   const h = new URLSearchParams(window.location.search).get("heart");
   return h === "atlas" ? "atlas" : h === "schematic" ? "schematic" : "specimen";
+}
+
+function reasoningFromQuery() {
+  return new URLSearchParams(window.location.search).get("reasoning") === "1" && labFromQuery(window.location.search) === null;
 }
 
 function reducedMotion() {
@@ -898,7 +1146,8 @@ function CameraRig({ focus, resetKey, views, view, fly }: {
       if (!f && dir.angleTo(target.current) < 0.01) target.current = null;
     }
     if (f || target.current) (controls as unknown as { update?: () => void } | null)?.update?.();
-  });
+    // After the orbit controls (-1), before the reasoning overlay (-0.5) reads the camera.
+  }, -0.75);
   return null;
 }
 
@@ -919,6 +1168,22 @@ function Heart({ probs, selected, hovered, mode, pins, twin, timing, onSelect, o
   const atria = useRef<THREE.Group>(null);
   const outflow = useRef<THREE.Group>(null);
   const myocardium = useRef<THREE.Mesh>(null);
+  const myoGeometry = useMemo(() => buildMyocardium(), []);
+  // Cardiac mass (ventricles and atria, not the great vessels): the reasoning view's halo and tower clearance.
+  const cardiac = useMemo(() => {
+    const ball = new THREE.SphereGeometry(1.1, 12, 8).getAttribute("position");
+    return supportHull([
+      { positions: myoGeometry.getAttribute("position") },
+      ...ATRIA.map((a) => ({
+        positions: ball,
+        matrix: new THREE.Matrix4().compose(
+          new THREE.Vector3(...a.center),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(...(a.rotation ?? [0, 0, 0]))),
+          new THREE.Vector3(...a.radii),
+        ),
+      })),
+    ]);
+  }, [myoGeometry]);
 
   // Function twin: atrial kick after the P wave, then ventricular ejection scaled by the patient's EF
   // (which also distends the great arteries, more with higher blood pressure); LBBB adds apical rocking.
@@ -932,7 +1197,7 @@ function Heart({ probs, selected, hovered, mode, pins, twin, timing, onSelect, o
 
   return (
     <group rotation={HEART_ROTATION} position={[0.1, -0.2, 0]}>
-      <FlowAnchor id="heart" />
+      <FlowAnchor id="heart" position={cardiac.centre} hull={cardiac.hull} />
       {pins && <AnatomyPins occluders={[myocardium, outflow, atria]} />}
       {/* Opaque anatomy swallows pointer events so arteries behind it can't be picked through it. */}
       <group ref={outflow} onPointerMove={stop} onClick={stop}>
@@ -944,7 +1209,7 @@ function Heart({ probs, selected, hovered, mode, pins, twin, timing, onSelect, o
         </group>
       </group>
       <group ref={ventricles}>
-        <Myocardium meshRef={myocardium} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} onSelect={onSelect} />
+        <Myocardium meshRef={myocardium} geometry={myoGeometry} probs={probs} selected={selected} focus={selected ?? hovered} mode={mode} onSelect={onSelect} />
         <Veins />
         {ARTERIES.map((seg) => (
           <Artery
@@ -967,6 +1232,7 @@ const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation();
 
 interface MyocardiumProps {
   meshRef: RefObject<THREE.Mesh>;
+  geometry: THREE.BufferGeometry;
   probs: ArteryProbs | null;
   selected: Vessel | null;
   /** Artery whose territory is highlighted: the selected one, else the hovered one. */
@@ -975,8 +1241,7 @@ interface MyocardiumProps {
   onSelect: (v: Vessel | null) => void;
 }
 
-function Myocardium({ meshRef, probs, selected, focus, mode, onSelect }: MyocardiumProps) {
-  const geometry = useMemo(() => buildMyocardium(), []);
+function Myocardium({ meshRef, geometry, probs, selected, focus, mode, onSelect }: MyocardiumProps) {
   const { muscle } = getTextures();
 
   useEffect(() => {

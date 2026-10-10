@@ -8,11 +8,13 @@ import ArteryTube, { type ArteryProbs } from "./ArteryTube";
 import { NEUTRAL_ARTERY, riskColor, type Vessel } from "./heartAnatomy";
 import { SPECIMEN_SCALE, SPECIMEN_URL, TERRITORY_STRIDE as S, prepareSpecimen } from "./specimenAnatomy";
 import { VESSEL_IDS } from "../anatomy/registry";
-import { FlowAnchor } from "../reasoning/anchors";
+import { FlowAnchor, supportHull } from "../reasoning/anchors";
 import type { BeatTiming, TwinParams } from "../twin/twin";
 import { useHeartMotion } from "../twin/useHeartMotion";
 
 const N = VESSEL_IDS.length; // index of the ventricle mask within each vertex's territory record
+// Height (model units above the bounding-box centre) where the aortic and pulmonary stumps rise above the atria.
+const CARDIAC_TOP = 0.45;
 
 interface Props {
   probs: ArteryProbs | null;
@@ -104,11 +106,20 @@ export default function SpecimenHeart({ probs, selected, hovered, mode, pins, tw
     onSelect(VESSEL_IDS[k] === selected ? null : VESSEL_IDS[k]);
   };
 
+  // Cardiac mass for the reasoning view's halo: the sculpted heart is one mesh, so drop the great-vessel stumps
+  // above the atria by height.
+  const cardiac = useMemo(() => supportHull([{
+    positions: prep.geometry.getAttribute("position"),
+    matrix: new THREE.Matrix4().makeTranslation(-prep.center.x, -prep.center.y, -prep.center.z),
+    keep: (_x, y) => y < CARDIAC_TOP,
+  }]), [prep]);
+
   const center = prep.center;
   return (
     <group scale={SPECIMEN_SCALE}>
+      {/* Outside the beating group, so the halo around the heart stays still. */}
+      <FlowAnchor id="heart" position={cardiac.centre} hull={cardiac.hull} />
       <group ref={beat}>
-        <FlowAnchor id="heart" />
         <group position={[-center.x, -center.y, -center.z]}>
           <mesh
             ref={meshRef}

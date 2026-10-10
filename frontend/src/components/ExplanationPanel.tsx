@@ -4,6 +4,7 @@ import { formatPct, reliability } from "../risk";
 import { MODEL_TABS, VESSEL } from "../anatomy/registry";
 import type { Vessel } from "./HeartScene";
 import EvidenceStrip from "../reasoning/EvidenceStrip";
+import { FILL_RULE, FILL_SHORT, FILL_TEXT, typicalColumns, type FillKind } from "../reasoning/dataGroups";
 
 interface Props {
   result: ExplainResponse | null;
@@ -24,6 +25,8 @@ interface Row {
   shap: number;
   derived: boolean;
   imputed: boolean;
+  /** How the API filled it when the form left it empty. */
+  fill: FillKind | null;
   sources: string[];
 }
 
@@ -39,21 +42,19 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
   const model: Target = selected ?? "cad";
   const exp = result.explanations[model];
   const probability = result.results[model].probability;
-  const imputedColumns = new Set(result.imputed.map((k) => info?.schema_to_column[k] ?? k));
+  // A derived score counts as imputed only if all its inputs were imputed.
+  const typical = typicalColumns(exp, result.imputed, info);
 
-  const rows: Row[] = exp.feature_names.map((name, i) => {
-    const sources = info?.derived_sources[name] ?? [];
-    return {
-      name,
-      label: FEATURE_LABELS[name]?.label ?? name,
-      value: exp.feature_values[i],
-      shap: exp.shap_values[i],
-      derived: exp.derived[i],
-      // A derived score counts as imputed only if all its inputs were imputed.
-      imputed: exp.derived[i] ? sources.length > 0 && sources.every((s) => imputedColumns.has(s)) : imputedColumns.has(name),
-      sources,
-    };
-  });
+  const rows: Row[] = exp.feature_names.map((name, i) => ({
+    name,
+    label: FEATURE_LABELS[name]?.label ?? name,
+    value: exp.feature_values[i],
+    shap: exp.shap_values[i],
+    derived: exp.derived[i],
+    imputed: typical.has(name),
+    fill: typical.get(name) ?? null,
+    sources: info?.derived_sources[name] ?? [],
+  }));
   const ranked = [...rows].sort((a, b) => Math.abs(b.shap) - Math.abs(a.shap));
   const top = ranked.slice(0, TOP_N);
   const restShap = ranked.slice(TOP_N).reduce((s, r) => s + r.shap, 0);
@@ -93,7 +94,7 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
         </p>
       )}
 
-      <EvidenceStrip exp={exp} />
+      <EvidenceStrip exp={exp} typical={typical} />
 
       <div className="text-[11px] text-gray-400">
         Each bar shows how much a finding pushed the estimate <span className="text-red-400">up</span> or{" "}
@@ -112,7 +113,7 @@ export default function ExplanationPanel({ result, metrics, info, selected, onSe
                   {r.derived && <span className="ml-1 rounded bg-slate-700 px-1 text-[9px] text-gray-300">score</span>}
                 </span>
                 <span className="shrink-0 text-gray-400">
-                  {r.imputed ? <i>typical value</i> : formatFeatureValue(r.name, r.value)}
+                  {r.fill ? <i>{FILL_TEXT[r.fill]}</i> : formatFeatureValue(r.name, r.value)}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -195,7 +196,7 @@ function PhysiologicalBreakdown({ rows }: { rows: Row[] }) {
                     <span className="truncate text-gray-300" title={r.derived ? `Calculated from: ${r.sources.join(", ")}` : r.label}>
                       {r.label}
                     </span>
-                    <span className="text-right text-gray-400">{r.imputed ? <i>typical</i> : formatFeatureValue(r.name, r.value)}</span>
+                    <span className="text-right text-gray-400">{r.fill ? <i>{FILL_SHORT[r.fill]}</i> : formatFeatureValue(r.name, r.value)}</span>
                     <span className="relative h-1.5 rounded bg-slate-700/60" aria-hidden>
                       <span className="absolute left-1/2 top-0 h-1.5 w-px bg-slate-500" />
                       <span
@@ -214,7 +215,7 @@ function PhysiologicalBreakdown({ rows }: { rows: Row[] }) {
         ))}
         <div className="text-[10px] text-gray-500">
           ×odds = factor by which this finding multiplies the odds of the selected outcome; ×1.00 = no effect.
-          Greyed rows were not entered and use a typical cohort value.
+          Greyed rows were not entered: {FILL_RULE}.
         </div>
       </div>
     </details>
@@ -233,7 +234,7 @@ function pts(delta: number) {
  */
 function summarySentence(ranked: Row[], p: number, band: string, what: string) {
   const level = band === "Higher" ? "higher likelihood" : band === "Lower" ? "lower likelihood" : "intermediate likelihood, undecided";
-  const fmt = (r: Row) => r.imputed ? r.label.toLowerCase() + " (typical value)" : describe(r);
+  const fmt = (r: Row) => r.imputed ? r.label.toLowerCase() + " (not entered)" : describe(r);
   const ups = ranked.filter((r) => r.shap > 0.15).slice(0, 3).map(fmt);
   const down = ranked.find((r) => r.shap < -0.15);
   let s = `The model's estimated probability of ${what} is ${formatPct(p)} (${level})`;

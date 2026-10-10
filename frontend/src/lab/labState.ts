@@ -45,14 +45,14 @@ export function labPatient(result: ExplainResponse | null, twin: TwinParams): La
 }
 
 /**
- * Where the lab's starting values come from, in words: the twin's (the patient's, or a what-if scenario's while
- * one is shown), with typical fill-in values said to be typical.
+ * Where the lab's starting values come from, in words: the patient's (the twin always shows the recorded values,
+ * also while a what-if scenario colours the arteries), with typical fill-in values said to be typical.
  */
 export function baselineText(result: ExplainResponse | null, twin: TwinParams, p: LabPatient): string {
   const v = `pulse ${Math.round(p.hr)}, BP ${Math.round(p.sbp)}, age ${Math.round(p.age)}`;
   if (!result) return `Starts from typical values (no estimate yet): ${v}`;
   const typical = [twin.notRecorded.has("hr") && "pulse", twin.notRecorded.has("bp") && "BP"].filter(Boolean);
-  return `Starts from the twin's ${v}${typical.length ? ` (${typical.join(" and ")} typical: not entered)` : ""}`;
+  return `Starts from the patient's ${v}${typical.length ? ` (${typical.join(" and ")} typical: not entered)` : ""}`;
 }
 
 /**

@@ -225,6 +225,7 @@ export default function App() {
                 probs={shown ? shown.vessel_probabilities : null}
                 pending={stale}
                 result={shown}
+                recorded={result}
                 metrics={metrics}
                 highlight={highlight}
                 selected={selected}
