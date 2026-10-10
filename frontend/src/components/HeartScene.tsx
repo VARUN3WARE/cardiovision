@@ -2,7 +2,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Bvh, ContactShadows, Environment, Lightformer, OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import { Bloom, EffectComposer, N8AO, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
 import AnatomyPins from "./AnatomyPins";
 import ArteryTube, { type ArteryProbs } from "./ArteryTube";
@@ -22,6 +22,9 @@ import LabPanel, { LabBanner, LabLegend } from "../lab/LabPanel";
 import { LAB_DEFAULT, baselineText, labFromQuery, labPatient, labTwin, type LabSettings } from "../lab/labState";
 import { labState } from "../twin/coronaryPhysiology";
 import { whenIdle } from "../lab/idle";
+import { StoryBar, StoryCaption, StoryCard } from "../story/StoryOverlay";
+import { STORY_STEPS, labDemo, storyCaption, storyFromQuery, topArtery, type StoryStepId } from "../story/storySteps";
+import { useStoryClock, type StoryState } from "../story/useStoryClock";
 import type { ExplainResponse, FeaturesResponse, MetricsResponse } from "../api/client";
 import SpecimenHeart from "./SpecimenHeart";
 import { BAND_COLOR, formatPct, getVesselCuts, vesselBand, type Band } from "../risk";
@@ -91,6 +94,28 @@ function getTextures() {
 export type { ArteryProbs, Vessel };
 
 type ViewMode = "arteries" | "territories";
+
+/** The user's view, saved when the story starts and restored exactly when it ends. */
+interface ViewSnapshot {
+  model: HeartModel;
+  mode: ViewMode;
+  beating: boolean;
+  showEcg: boolean;
+  labOn: boolean;
+  labSettings: LabSettings;
+  labCollapsed: boolean;
+  reasoning: boolean;
+  chest: boolean;
+  layers: ChestLayers;
+  xray: boolean;
+  pins: boolean;
+  pick: AtlasPick | null;
+  selected: Vessel | null;
+  inspectorOpen: boolean;
+  chestBeforeLab: boolean | null;
+  chestBeforeReasoning: boolean | null;
+  camera: THREE.Vector3 | null;
+}
 
 interface HeartSceneProps {
   probs: ArteryProbs | null;
@@ -166,7 +191,22 @@ export default function HeartScene({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // Zoomed in so far that some reasoning streams would end off screen (they are hidden).
   const [streamsOffscreen, setStreamsOffscreen] = useState(false);
-  useEffect(() => setInspectorOpen(false), [selected]);
+  // A new selection starts as a chip on narrow views (or as the story's restore asks).
+  const pendingInspector = useRef<boolean | null>(null);
+  useEffect(() => {
+    setInspectorOpen(pendingInspector.current ?? false);
+    pendingInspector.current = null;
+  }, [selected]);
+  // Story mode (deep link: ?story=1; ?story=1&step=N shows step N as it ends, paused). It takes over the view and
+  // gives the user's back exactly on exit; it never changes the patient's data or a what-if scenario.
+  const [story, setStory] = useState<StoryState | null>(null);
+  const storySnap = useRef<ViewSnapshot | null>(null);
+  const storyQuery = useRef(storyFromQuery(window.location.search));
+  const cameraRef = useRef<THREE.Camera | null>(null);
+  // An exact camera position to put back (the story's restore), and until when to keep the lab from re-aiming it.
+  const [place, setPlace] = useState<{ pos: THREE.Vector3; n: number } | null>(null);
+  const restoring = useRef(0);
+  const still = useMemo(reducedMotion, []);
   const viewRef = useRef<HTMLDivElement>(null);
   const { width: viewWidth, height: viewHeight } = useElementSize(viewRef);
   // DOM overlays the 3D labels and cards must avoid (toolbar, notices column, legend, view buttons).
@@ -285,7 +325,7 @@ export default function HeartScene({
   // Face the sandbox narrowing (and its artery's territory) when the lab opens or the narrowing moves.
   const [labViews, setLabViews] = useState<Record<Vessel, THREE.Vector3> | null>(null);
   useEffect(() => {
-    if (!labActive || !labViews) return;
+    if (!labActive || !labViews || performance.now() < restoring.current) return;
     setView((cur) => ({ dir: labViews[labSettings.vessel].clone(), n: (cur?.n ?? 0) + 1 }));
   }, [labActive, labViews, labSettings.vessel]);
   // The patient's recorded wall-motion grade (a what-if contrast changes the model's input, not the record).
@@ -311,8 +351,9 @@ export default function HeartScene({
     [overlay],
   );
   const belowNotices = (overlay.notices?.bottom ?? overlay.toolbar) + 6;
-  // The legend shrinks to the band scale while the reasoning view (or a narrow view's vessel card) needs the room.
-  const legendCollapsed = reasoning || (narrowCard && !!selected && inspectorOpen);
+  // The legend shrinks to the band scale while the reasoning view (or a narrow view's vessel card or story caption)
+  // needs the room.
+  const legendCollapsed = reasoning || (narrowCard && !!selected && inspectorOpen) || (compact && story !== null);
   const stackViews = viewWidth > 0 && viewWidth < 12 + (legendCollapsed ? 208 : 240) + 8 + 78 + 12;
   // Model credit (for the atlas also the reference-anatomy caveat): bottom right, or under the legend when narrow.
   const creditInLegend = compact && !labActive;
@@ -366,6 +407,190 @@ export default function HeartScene({
   const labFrame = useMemo<LabFrame | null>(
     () => (labFree && labFit ? { left: labFree.left, right: labFree.right, top: labFree.top, scale: labFit.s } : null),
     [labFree, labFit],
+  );
+
+  // ---- Story mode --------------------------------------------------------------------------------------------
+  const storyStep = story ? STORY_STEPS[story.step] : null;
+  // The artery the story inspects (and puts the lab's narrowing on): highest band, then highest chance.
+  const storyTop = useMemo(() => topArtery(result), [result]);
+  const snapshotView = (): ViewSnapshot => ({
+    model, mode, beating, showEcg, labOn, labSettings, labCollapsed, reasoning, chest, layers, xray, pins, pick, selected,
+    inspectorOpen, chestBeforeLab: chestBeforeLab.current, chestBeforeReasoning: chestBeforeReasoning.current,
+    camera: cameraRef.current?.position.clone() ?? null,
+  });
+  const startStory = (step = 0, opts: { playing?: boolean; atEnd?: boolean } = {}) => {
+    if (!story) storySnap.current = snapshotView();
+    setStory((s) => ({ step, playing: opts.playing ?? true, atEnd: opts.atEnd ?? false, run: (s?.run ?? 0) + 1 }));
+  };
+  const gotoStory = (step: number, playing?: boolean) =>
+    setStory((s) => s && {
+      step: Math.min(STORY_STEPS.length - 1, Math.max(0, step)), playing: playing ?? s.playing, atEnd: false, run: s.run + 1,
+    });
+  const exitStory = () => {
+    const snap = storySnap.current;
+    storySnap.current = null;
+    storyFly.current = false;
+    setStory(null);
+    if (!snap) return;
+    setModel(snap.model);
+    setMode(snap.mode);
+    setBeating(snap.beating);
+    setShowEcg(snap.showEcg);
+    setLabSettings(snap.labSettings);
+    setLabOn(snap.labOn);
+    setLabCollapsed(snap.labCollapsed);
+    setReasoning(snap.reasoning);
+    setChest(snap.chest);
+    setLayers(snap.layers);
+    setXray(snap.xray);
+    setPins(snap.pins);
+    setPick(snap.pick);
+    setFly(null);
+    chestBeforeLab.current = snap.chestBeforeLab;
+    chestBeforeReasoning.current = snap.chestBeforeReasoning;
+    if (snap.selected !== selected) {
+      pendingInspector.current = snap.inspectorOpen;
+      onSelect(snap.selected);
+    } else setInspectorOpen(snap.inspectorOpen);
+    if (snap.camera) {
+      restoring.current = performance.now() + 2500;
+      const pos = snap.camera;
+      setPlace((p) => ({ pos, n: (p?.n ?? 0) + 1 }));
+    }
+  };
+  // The chest step's fly-in waits until the Atlas heart is on screen (the first time it may still be loading).
+  const storyFly = useRef(false);
+  /** The story's view for a step (`still`: its end state at once, no camera flight or demonstration). */
+  const enterStoryStep = (id: StoryStepId, stillStep: boolean) => {
+    storyFly.current = false;
+    setModel("atlas");
+    setMode("arteries");
+    setXray(false);
+    setPins(false);
+    setPick(null);
+    setLayerMenu(false);
+    setMoreMenu(false);
+    setBeating(true);
+    setShowEcg(true);
+    setLabCollapsed(false);
+    if (id !== "lab") setLabOn(false);
+    if (id !== "reasoning") setReasoning(false);
+    if (id !== "chest") setChest(false);
+    const front = () => setView((cur) => ({ dir: DEFAULT_VIEW.clone().normalize(), n: (cur?.n ?? 0) + 1 }));
+    switch (id) {
+      case "chest":
+        onSelect(null);
+        setLayers({ skin: true, skeleton: true, organs: true });
+        setChest(true);
+        setFly(null);
+        if (stillStep) {
+          const pos = DEFAULT_VIEW.clone().normalize().multiplyScalar(fitDistance(viewWidth, viewHeight));
+          setPlace((p) => ({ pos, n: (p?.n ?? 0) + 1 }));
+        } else storyFly.current = true;
+        break;
+      case "twin":
+      case "honesty":
+        onSelect(null);
+        front();
+        break;
+      case "reasoning":
+        onSelect(null); // the overall CAD model: streams end on the halo round the heart
+        setReasoning(true);
+        front();
+        break;
+      case "arteries":
+        // The camera turns to its territory (also when it was already selected).
+        if (!storyTop) front();
+        else if (selected === storyTop) {
+          const views = atlasViews ?? VESSEL_VIEWS;
+          setView((cur) => ({ dir: views[storyTop].clone(), n: (cur?.n ?? 0) + 1 }));
+        } else onSelect(storyTop);
+        break;
+      case "lab":
+        setLabSettings({ vessel: storyTop ?? VESSEL_IDS[0], ...labDemo(stillStep ? Infinity : 0) });
+        setLabOn(true);
+        break;
+    }
+  };
+  useEffect(() => {
+    if (story) enterStoryStep(STORY_STEPS[story.step].id, story.atEnd || still);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [story?.run]);
+  useEffect(() => {
+    if (!storyFly.current || !ready || !useAtlas) return;
+    storyFly.current = false;
+    setFly((f) => ({ from: CHEST_DISTANCE, to: fitDistance(viewWidth, viewHeight), n: (f?.n ?? 0) + 1 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, useAtlas, story?.run]);
+  // A new estimate (e.g. the first, after a deep link) moves the inspected artery and the lab's narrowing with it.
+  useEffect(() => {
+    if (!storyTop) return;
+    if (storyStep?.id === "arteries") onSelect(storyTop);
+    if (storyStep?.id === "lab") setLabSettings((st) => (st.vessel === storyTop ? st : { ...st, vessel: storyTop }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storyTop, storyStep?.id]);
+  // The clock (and the step's progress line) waits while a heart is still being built.
+  const storyPlaying = !!story?.playing && ready;
+  const storyClock = useStoryClock(story && { ...story, playing: storyPlaying }, storyStep?.seconds ?? 1, (t) => {
+    // The lab step's demonstration: the narrowing grows to 85%, then rest to peak exercise (static if reduced motion).
+    if (storyStep?.id !== "lab" || still || story?.atEnd) return;
+    const d = labDemo(t);
+    setLabSettings((st) => (st.narrowing === d.narrowing && st.exercise === d.exercise ? st : { ...st, ...d }));
+  }, () => {
+    setStory((s) => s && (s.step < STORY_STEPS.length - 1
+      ? { step: s.step + 1, playing: true, atEnd: false, run: s.run + 1 }
+      : { ...s, playing: false }));
+  });
+  const playStory = () => setStory((s) => {
+    if (!s) return s;
+    if (s.playing) return { ...s, playing: false };
+    // A finished step (or one opened at its end) moves on; at the very end the story starts again.
+    if (storyClock.current >= STORY_STEPS[s.step].seconds) {
+      return { step: s.step < STORY_STEPS.length - 1 ? s.step + 1 : 0, playing: true, atEnd: false, run: s.run + 1 };
+    }
+    return { ...s, playing: true };
+  });
+  const storyKeys = useRef({ exit: exitStory, goto: gotoStory, step: story?.step ?? 0 });
+  storyKeys.current = { exit: exitStory, goto: gotoStory, step: story?.step ?? 0 };
+  useEffect(() => {
+    if (!story) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (e.key === "Escape") {
+        // Before any other Esc handler (the inspector's would deselect the artery being restored).
+        e.stopPropagation();
+        e.preventDefault();
+        storyKeys.current.exit();
+      } else if (!typing && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        storyKeys.current.goto(storyKeys.current.step + (e.key === "ArrowRight" ? 1 : -1));
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [story !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Deep link: once the Atlas heart is known to be available.
+  useEffect(() => {
+    const q = storyQuery.current;
+    if (atlasOk !== true || !q) return;
+    storyQuery.current = null;
+    startStory(q.step, { playing: q.playing, atEnd: q.atEnd });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atlasOk]);
+  const storyText = storyStep
+    ? storyCaption(storyStep.id, {
+      result, twin, whatIf, stale: pending || lagging, top: storyTop, lab, t: 0,
+    })
+    : "";
+  const storyCard = storyStep?.id === "honesty";
+  const storyButton = atlasOk && !atlasFailed && (
+    <button
+      onClick={() => startStory()}
+      className={`rounded bg-slate-900/80 ${pad} py-1 text-fuchsia-200 hover:bg-slate-700`}
+      title="Story: a guided, captioned tour of this patient's result on the Atlas heart, about 90 s (Esc gives your view back)"
+    >
+      ▶ Story
+    </button>
   );
 
   const xrayButton = useAtlas && (
@@ -532,7 +757,7 @@ export default function HeartScene({
 
         <FirstFrame onReady={() => setFramesReady(true)} />
         {import.meta.env.DEV && <DevHook />}
-        <FitCamera />
+        <FitCamera hold={restoring} />
         {/* Lab: the heart in the part of the view the panel, banner and legend leave free. */}
         <ViewShift fit={labFit} />
         <CameraRig
@@ -540,8 +765,11 @@ export default function HeartScene({
           resetKey={resetKey}
           view={view}
           fly={fly}
+          place={place}
+          hold={restoring}
           views={useAtlas && atlasViews ? atlasViews : useSpecimen && specimenViews ? specimenViews : VESSEL_VIEWS}
         />
+        <CameraHandle handle={cameraRef} />
         <OrbitControls enablePan={false} minDistance={3} maxDistance={showChest ? 26 : 12} makeDefault />
       </Canvas>
 
@@ -551,7 +779,23 @@ export default function HeartScene({
         </div>
       )}
 
-      {/* View controls */}
+      {/* View controls (the story's controls in their place while it runs) */}
+      {story ? (
+        <div ref={toolbarRef} className="absolute left-3 right-3 top-3 z-20 text-xs">
+          <StoryBar
+            step={story.step}
+            playing={storyPlaying}
+            run={story.run}
+            atEnd={story.atEnd}
+            compact={compact}
+            onPlay={playStory}
+            onPrev={() => gotoStory(story.step - 1)}
+            onNext={() => gotoStory(story.step + 1)}
+            onGoto={(i) => gotoStory(i)}
+            onExit={exitStory}
+          />
+        </div>
+      ) : (
       <div ref={toolbarRef} className="absolute left-3 top-3 z-20 flex flex-wrap gap-1 text-xs">
         {models.length > 1 && (
           <div className="mr-1 flex overflow-hidden rounded" role="radiogroup" aria-label="Heart model">
@@ -676,6 +920,7 @@ export default function HeartScene({
             Lab
           </button>
         )}
+        {storyButton}
         {!compact && hdButton}
         {!compact && resetButton}
         {viewsInMenu && (
@@ -700,6 +945,7 @@ export default function HeartScene({
           </div>
         )}
       </div>
+      )}
 
       {/* Notices under the toolbar, stacked in one centred column so they never cover it or each other (beside the
           docked lab panel while the lab is on). */}
@@ -708,6 +954,7 @@ export default function HeartScene({
         className="pointer-events-none absolute left-3 z-10 flex flex-col items-center gap-1"
         style={{ top: overlay.toolbar + 6, right: labActive && labSide ? LAB_PANEL_W + 24 : 12 }}
       >
+        {story && storyText && <StoryCaption key={story.step} text={storyText} compact={compact} />}
         {pending && probs && (
           <div role="status" className="rounded bg-amber-950/90 px-2 py-1 text-center text-[10px] text-amber-200">
             {/* In the lab the arteries show the sandbox, so only its starting values can be out of date. */}
@@ -719,7 +966,7 @@ export default function HeartScene({
             What-if: colours show the scenario; heartbeat and ECG show recorded values
           </div>
         )}
-        {reasoning && (
+        {reasoning && !story && (
           <ReasoningCaption
             result={result}
             selected={selected}
@@ -747,15 +994,29 @@ export default function HeartScene({
         )}
       </div>
 
+      {/* The story's closing card, under the notices and clear of the legend. */}
+      {story && storyCard && (
+        <StoryCard
+          metrics={metrics}
+          ended={!story.playing}
+          onReplay={() => gotoStory(0, true)}
+          onExit={exitStory}
+          style={{ top: belowNotices, maxHeight: Math.max(150, viewHeight - belowNotices - overlay.legend - 12) }}
+        />
+      )}
+
       {labActive && lab && (
         labSide ? (
           <>
-            {/* The sandbox banner over the heart, in the part of the view the panel leaves free (wraps there). */}
-            <div className="pointer-events-none absolute left-3 z-20 flex justify-center" style={{ right: LAB_PANEL_W + 24, top: belowNotices }}>
-              <div ref={labBannerRef} className="max-w-[440px]">
-                <LabBanner />
+            {/* The sandbox banner over the heart, in the part of the view the panel leaves free (wraps there; the
+                story's caption says the same while it runs). */}
+            {!story && (
+              <div className="pointer-events-none absolute left-3 z-20 flex justify-center" style={{ right: LAB_PANEL_W + 24, top: belowNotices }}>
+                <div ref={labBannerRef} className="max-w-[440px]">
+                  <LabBanner />
+                </div>
               </div>
-            </div>
+            )}
             {labPanel("side")}
             <div ref={legendRef} className="absolute bottom-3 left-3 z-20 w-64" style={{ maxWidth: viewWidth - LAB_PANEL_W - 36 }}>
               <LabLegend>{credit}</LabLegend>
@@ -820,8 +1081,9 @@ export default function HeartScene({
       )}
 
       {/* Legend (the lab has its own, above: its arteries show the sandbox, not the estimates). While the reasoning
-          view (or a narrow view's vessel card) needs the room, only the band scale. */}
-      {labActive ? null : (
+          view (or a narrow view's vessel card) needs the room, only the band scale; on narrow views the story's
+          closing card takes its place. */}
+      {labActive || (storyCard && compact) ? null : (
       <div
         ref={legendRef}
         className={`absolute bottom-3 left-3 z-20 ${legendCollapsed ? "w-52" : "w-60"} max-w-[calc(100%-1.5rem)] text-[10px] text-gray-400`}
@@ -1033,14 +1295,31 @@ function useOverlayLayout(
   return layout;
 }
 
-/** Pull the camera back on narrow canvases so the whole heart stays in frame. */
-function FitCamera() {
+/** Camera distance that keeps the whole heart in frame: pulled back on narrow canvases. */
+function fitDistance(width: number, height: number) {
+  return width > 0 && height > 0 ? HEART_DISTANCE * Math.min(1.4, Math.max(1, 0.8 / (width / height))) : HEART_DISTANCE;
+}
+
+/**
+ * Pull the camera back on narrow canvases so the whole heart stays in frame (not while `hold` lasts: the story is
+ * putting the user's own camera back, for the canvas size it is returning to).
+ */
+function FitCamera({ hold }: { hold: MutableRefObject<number> }) {
   const { camera, size } = useThree();
   useEffect(() => {
     if (!size.width || !size.height) return; // first layout pass can report 0
-    const aspect = size.width / size.height;
-    camera.position.setLength(6.8 * Math.min(1.4, Math.max(1, 0.8 / aspect)));
-  }, [camera, size.width, size.height]);
+    if (performance.now() < hold.current) return;
+    camera.position.setLength(fitDistance(size.width, size.height));
+  }, [camera, size.width, size.height, hold]);
+  return null;
+}
+
+/** Hands the scene's camera to the DOM side (the story saves its position, to give the view back exactly). */
+function CameraHandle({ handle }: { handle: MutableRefObject<THREE.Camera | null> }) {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    handle.current = camera;
+  }, [camera, handle]);
   return null;
 }
 
@@ -1192,22 +1471,27 @@ function reducedMotion() {
 
 /**
  * Swing the camera round to face the selected vessel's territory (or a standard view), and run the
- * chest-to-heart fly-in, then hand control back to the orbit controls.
+ * chest-to-heart fly-in, then hand control back to the orbit controls. With reduced motion it turns at once.
  */
-function CameraRig({ focus, resetKey, views, view, fly }: {
+function CameraRig({ focus, resetKey, views, view, fly, place, hold }: {
   focus: Vessel | null;
   resetKey: number;
   views: Record<Vessel, THREE.Vector3>;
   view: { dir: THREE.Vector3; n: number } | null;
   fly: { from: number; to: number; n: number } | null;
+  /** An exact camera position to jump to (the story giving the user's view back). */
+  place: { pos: THREE.Vector3; n: number } | null;
+  /** Until this time (performance.now()) a new selection or set of views does not re-aim the camera. */
+  hold: MutableRefObject<number>;
 }) {
   const { camera, controls } = useThree();
   const target = useRef<THREE.Vector3 | null>(null);
   const flight = useRef<{ from: number; to: number; t: number } | null>(null);
+  const still = useMemo(reducedMotion, []);
 
   useEffect(() => {
-    if (focus) target.current = views[focus].clone();
-  }, [focus, views]);
+    if (focus && performance.now() >= hold.current) target.current = views[focus].clone();
+  }, [focus, views, hold]);
   useEffect(() => {
     if (resetKey) target.current = DEFAULT_VIEW.clone().normalize();
   }, [resetKey]);
@@ -1222,6 +1506,15 @@ function CameraRig({ focus, resetKey, views, view, fly }: {
     target.current = DEFAULT_VIEW.clone().normalize();
     camera.position.copy(new THREE.Vector3(-0.55, 0.3, 1).normalize().multiplyScalar(fly.from));
   }, [fly, camera]);
+  // Last, so it also overrides a re-aim asked for in the same update.
+  useEffect(() => {
+    if (!place) return;
+    flight.current = null;
+    target.current = null;
+    camera.position.copy(place.pos);
+    (controls as unknown as { update?: () => void } | null)?.update?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [place, camera]);
 
   useFrame((_, dt) => {
     const f = flight.current;
@@ -1235,7 +1528,7 @@ function CameraRig({ focus, resetKey, views, view, fly }: {
     if (target.current) {
       const dist = camera.position.length();
       const dir = camera.position.clone().normalize();
-      dir.lerp(target.current, Math.min(1, dt * (f ? 1.4 : 4))).normalize();
+      dir.lerp(target.current, still && !f ? 1 : Math.min(1, dt * (f ? 1.4 : 4))).normalize();
       camera.position.copy(dir.multiplyScalar(dist));
       if (!f && dir.angleTo(target.current) < 0.01) target.current = null;
     }
