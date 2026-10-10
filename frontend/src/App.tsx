@@ -5,6 +5,7 @@ import ClinicalDashboard from "./components/ClinicalDashboard";
 import ExplanationPanel from "./components/ExplanationPanel";
 import ErrorBoundary from "./components/ErrorBoundary";
 import WhatIfPanel from "./components/WhatIfPanel";
+import CohortPanel from "./cohort/CohortPanel";
 import { useScenario } from "./whatif/useScenario";
 import { scenarioFromQuery } from "./whatif/scenario";
 import {
@@ -57,6 +58,10 @@ export default function App() {
   const sc = useScenario(payload, result, deepScenario.scenario);
   // What every view shows: the scenario while it is active (keeping the patient's result until its first reply).
   const shown = sc.active && sc.result ? sc.result : result;
+
+  // Similar patients (twin cohort). Deep link: ?cohort=1 opens the card and scrolls to it.
+  const [deepCohort] = useState(() => new URLSearchParams(window.location.search).get("cohort") === "1");
+  const [cohortOpen, setCohortOpen] = useState(deepCohort);
 
   const requestId = useRef(0);
   const controller = useRef<AbortController | null>(null);
@@ -228,6 +233,14 @@ export default function App() {
                   scenario={sc.active}
                 />
               </div>
+              <CohortPanel
+                open={cohortOpen}
+                onToggle={() => setCohortOpen((o) => !o)}
+                // Real patients are compared with the recorded values, never with a what-if scenario.
+                result={result}
+                scenario={sc.active}
+                scrollOnOpen={deepCohort}
+              />
               <WhatIfPanel
                 open={whatIfOpen}
                 onToggle={() => setWhatIfOpen((o) => !o)}
