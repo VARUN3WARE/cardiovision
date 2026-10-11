@@ -83,6 +83,8 @@ leakage. So we set ourselves two goals: make the risk visible on the anatomy, an
   inputs that were not entered and recognises a patient who is in the dataset.
 - **Tests.** An in-process pipeline test and vitest unit tests for the browser logic (twin timing, physiology
   curves, data-type sums, what-if logic, nearest neighbours, the story script).
+- **Reproducible.** The dataset and the four trained models ship with the repository, so it runs without
+  training; `train.py`, `make_presets.py` and `make_cohort.py` regenerate everything deterministically.
 
 ## Results
 
