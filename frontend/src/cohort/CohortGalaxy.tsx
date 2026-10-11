@@ -73,8 +73,27 @@ function Galaxy({ patients, cadIndex, neighbours, self, here, highlight, onHover
       <Glow position={here} />
       <Picker positions={positions} skip={self} here={here} onHover={onHover} />
       <OrbitControls ref={controls} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.12} rotateSpeed={0.7} />
+      <SettleFrames />
     </>
   );
+}
+
+/**
+ * Draws for the first ~0.5 s after the map appears. In Chrome on an NVIDIA GPU (ANGLE over OpenGL) the first frame
+ * after the shaders compile lost the coloured points (only the rings and the glow showed), and with frameloop
+ * "demand" nothing drew again until the map was dragged. Intel graphics and SwiftShader were not affected.
+ */
+function SettleFrames() {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    let left = 30;
+    let raf = requestAnimationFrame(function tick() {
+      invalidate();
+      if (--left > 0) raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [invalidate]);
+  return null;
 }
 
 function Points({ positions, patients, cadIndex, neighbours, self, highlight }: {
