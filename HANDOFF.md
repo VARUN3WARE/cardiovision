@@ -92,7 +92,7 @@ split noise is ~0.02 AUC, so compare candidates with paired deltas on identical 
 
 5. Machine: Dell G15, i5-12500H, 16GB RAM (~5.7GB free), RTX 3050 but NVIDIA driver is broken (nvidia-smi fails). Doesn't matter -- Track A needs no GPU. Disk at 89% (28GB free). The venv pulled in a 351MB nvidia-nccl-cu12 as an xgboost dep (harmless but big).
 
-6. Models are gitignored (*.joblib). The repo ships features.json/encoding.json/metrics.json but NOT the trained weights. A fresh clone must run python train.py first. This is intentional -- document it in the README.
+6. The trained models (backend/models/*.joblib, 2.1 MB) and held-out predictions (oof_predictions.npz) are committed since 11 Oct (the Track A deliverables list model weights). train.py rebuilds them numerically identically (fresh-clone check, 10 Oct); after any retrain, commit the new weights with metrics.json, presets.json and cohort.json.
 
 ## 7. What's DONE (Day 1)
 

@@ -19,7 +19,6 @@ dist/
 backend/data/*.csv
 backend/data/*.xlsx
 backend/data/raw/
-backend/models/*.joblib
 backend/models/*.pkl
 
 # OS
@@ -32,7 +31,6 @@ Thumbs.db
 
 # Experiment outputs (regenerate with backend/experiments/exp_*.py)
 backend/experiments/results/
-backend/models/*.npz
 backend/experiments/catboost_info/
 
 # BodyParts3D source meshes (re-fetch with scripts/bp3d/fetch_bp3d.py)

@@ -357,8 +357,9 @@ integrated GPU.
 
 ## Run it locally
 
-**Prerequisites:** Python 3.10–3.13 and Node 18+. The dataset ships with the repository
-(`backend/data/extention.zip`, the UCI download); `train.py` extracts it.
+**Prerequisites:** Python 3.10–3.13 and Node 18+. The dataset (`backend/data/extention.zip`, the UCI download) and
+the four trained models (`backend/models/*.joblib`, 2 MB) ship with the repository, so nothing has to be trained
+first; `python train.py` rebuilds the models from the data in about 5 minutes.
 
 **Backend**
 
@@ -366,8 +367,7 @@ integrated GPU.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python train.py                      # one-time, about 5 min; trained weights are not committed
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000   # the trained models ship in backend/models/
 ```
 
 API docs at http://localhost:8000/docs.
@@ -385,6 +385,7 @@ npm run dev                          # http://localhost:5173 (proxies API calls 
 
 ```bash
 # backend/
+python train.py            # retrain the four models (about 5 min; numerically identical to the shipped ones)
 python make_presets.py     # regenerate the example patients (frontend/src/presets.json)
 python make_cohort.py      # regenerate "Similar patients" (frontend/src/cohort/cohort.json); re-run after any retrain
 python test_pipeline.py    # end-to-end sanity check, no server needed
@@ -442,7 +443,7 @@ backend/
   experiments/         # leakage-safe harness + the model-selection experiments
   requirements.txt     # runtime; requirements-dev.txt adds experiment-only packages
   data/                # UCI zip (committed); extracted CSV (gitignored)
-  models/              # metrics, features, encoding, feature_info, verification JSON (committed); weights (gitignored)
+  models/              # trained models (*.joblib), held-out predictions, metrics, features, encoding, verification
 frontend/
   public/models/       # heart.glb (Realistic), bp3d_heart.glb + bp3d_thorax.glb (Atlas), ATTRIBUTION.md
   scripts/             # build-bp3d.mjs (Atlas GLBs), compress-heart.mjs
