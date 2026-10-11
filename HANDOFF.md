@@ -1,7 +1,7 @@
 # HANDOFF -- CardioVision (Track A)
 
 Handoff doc for the next agent (Claude) picking up this project.
-Last updated: 2026-10-10. Done: models (7c), usability (7c), realistic heart (7d), BodyParts3D atlas (7e), 3D encoding and inspection (7f), medical audit (7g), function twin (7h) and the standout layer T1-T6, story mode included (7i). Remaining: final regression, demo video, Devpost (section 8).
+Last updated: 2026-10-11. Done: models (7c), usability (7c), realistic heart (7d), BodyParts3D atlas (7e), 3D encoding and inspection (7f), medical audit (7g), function twin (7h) and the standout layer T1-T6, story mode included (7i); README rebuilt around screenshots and clips (11 Oct). Remaining: make the repo public, demo video, Devpost (section 8).
 
 ## 1. What this project is
 
@@ -422,12 +422,30 @@ Done on 8 Oct: physiological breakdown (requirement 3c), technical documentation
 docs/make_figures.py), demo script, Devpost text. Done on 10 Oct: T1-T6 and the review fixes of T1-T5 (7i); demo
 script, Devpost text, README and plan updated for the standout layer, story mode included.
 
+Done on 11 Oct:
+- Cohort map blank on NVIDIA GPUs, fixed (e7955ea): in Chrome on the RTX 3050 (ANGLE over OpenGL) the map's first
+  frame after the shaders compiled lost the coloured points and, with frameloop "demand", stayed blank until dragged.
+  It now draws for the first ~0.5 s after mount. Intel graphics and SwiftShader were not affected, which is why the
+  earlier (SwiftShader) reviews missed it.
+- README rebuilt (d0cafc4): animated hero, feature tour with a clip or screenshot per feature, results with the
+  evaluation figure, architecture figure, collapsible reference sections. Media in docs/media (9 MB: seven animated
+  WebP clips, six JPEGs). GitHub strips <video> tags with repo paths, so the clips are animated WebP.
+- Capture method (for regenerating media): headless Chrome on the GPU, with
+  __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json and
+  --use-gl=angle --use-angle=gl-egl (Intel: drop the env variable), plus a virtual clock injected before page load
+  (performance.now, Date.now, requestAnimationFrame and timers advance one frame per screenshot), so clips are
+  frame-exact however slow the capture. GPU captures also avoid the SwiftShader-only glitches (lost first /explain
+  on ?heart=schematic). The scripts were scratch tools and are not in the repo.
+- Full-resolution MP4 masters of all seven clips (hero, twin, reasoning, whatif, lab, cohort, story; H.264 CRF 18)
+  are in ../media-masters/ next to the repo, not committed: B-roll for the demo video.
+
 1. Story mode (T6): done (fea1a35, 23d6f4c; review fixes 59587f8); README bullet and deep links, docs/demo-script.md Scene 9 (4:20-4:45)
    and its tab, docs/devpost.md "What it does", docs/plan-twin-and-simulation.md T6 and 7i are updated.
-2. Ischaemia-lab review fixes: done (6d80f98). Next: a final regression of every deep link at 1440x900 and
-   1024x768 with the CDP capture (5 presets x 3 hearts with labels matching the cards; ?reasoning, ?whatif, ?lab,
-   ?cohort, ?story=1&step=1..6), console clean, then npm test, npm run build, test_pipeline.py and
-   verify_models.py (numbers unchanged).
+2. Ischaemia-lab review fixes: done (6d80f98). Final regression: done on 10 Oct (5 presets x 3 hearts with every 3D
+   label matching its card, 11 deep links with a clean console, npm test, build, test_pipeline.py, and
+   verify_models.py reproducing verification.json except its run time).
+2b. Make the GitHub repo public before submitting: it is private now (anonymous requests to the repo page get 404),
+   so judges could not open it or see the README media.
 3. Technical PDF refresh: done on 10 Oct (6 of 6 allowed pages, about 6 lines free on page 6). Section 7 covers the
    twin and simulation layer, Section 4 the independent verification (table: fresh-split AUC with CIs, baselines,
    calibration slopes, AUC within CAD patients; leakage, vessel specificity, clinical direction), Section 5 the
@@ -440,7 +458,8 @@ script, Devpost text, README and plan updated for the standout layer, story mode
    show cross-validated AUCs, while the verification (CIs, permutation, baselines, vessel specificity) is only in
    docs/model-verification.md, which the demo script shows directly.
 6. Record the demo video from docs/demo-script.md (5-6 min, 1080p), upload to YouTube as unlisted, add English
-   subtitles.
+   subtitles. The MP4 masters in ../media-masters/ can serve as B-roll. Once it is up, add it to the top of the README
+   as a thumbnail linking to YouTube.
 7. Devpost: paste docs/devpost.md, add the GitHub link, YouTube link and PDF, and add every teammate with real
    full names (each needs a Devpost account). Team names are not in the docs yet; add them to the PDF title block
    if wanted (docs/technical-documentation.md front matter) and rebuild.
