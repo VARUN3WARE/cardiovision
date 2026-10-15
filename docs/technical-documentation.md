@@ -3,7 +3,7 @@ title: "CardioVision: coronary artery disease and vessel-level stenosis risk, ex
 subtitle: "Multimodal AI Hackathon 2026 · Track A: Cardiovascular Risk Visualization & Prediction · Technical documentation"
 ---
 
-<p class="meta">Code, data pipeline and trained-model recipe: <a href="https://github.com/VARUN3WARE/cardiovision">github.com/VARUN3WARE/cardiovision</a> · All metrics are reproducible with <code>python backend/train.py</code> and <code>python backend/verify_models.py</code>.</p>
+<p class="meta">Team HumanSlop: Varun Rao and Galaba Vamsi · Demo video: <a href="https://youtu.be/Gk6_mYgvZAc">youtu.be/Gk6_mYgvZAc</a> · Code, data pipeline and trained-model recipe: <a href="https://github.com/VARUN3WARE/cardiovision">github.com/VARUN3WARE/cardiovision</a> · All metrics are reproducible with <code>python backend/train.py</code> and <code>python backend/verify_models.py</code>.</p>
 
 <p class="warn"><b>Decision support / educational use only.</b> The models were trained on 303 patients referred for angiography at one centre (71% had CAD). They are not validated for screening, are not a diagnosis, and do not replace angiography or professional judgement. The same disclaimer is permanently visible in the UI and returned in every API response.</p>
 

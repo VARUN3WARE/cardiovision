@@ -6,6 +6,8 @@
 
 Multimodal AI Hackathon 2026 · Track A: Cardiovascular Risk Visualization & Prediction
 
+Team HumanSlop: **Varun Rao** and **Galaba Vamsi**
+
 ![Track A](https://img.shields.io/badge/Multimodal_AI_Hackathon_2026-Track_A-e11d48?style=flat-square)
 ![ROC-AUC CAD 0.94](https://img.shields.io/badge/ROC--AUC_(CAD)-0.94-2563eb?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -18,6 +20,7 @@ Multimodal AI Hackathon 2026 · Track A: Cardiovascular Risk Visualization & Pre
 
 <sub>The atlas heart in the chest: the camera flies in, the heart beats at this patient's recorded pulse, and each artery carries its own model's estimate.</sub>
 
+**[▶ Watch the demo video (7 min)](https://youtu.be/Gk6_mYgvZAc)** ·
 **[Technical documentation (PDF, 6 pages)](docs/CardioVision-Technical-Documentation.pdf)** ·
 [Model verification](docs/model-verification.md) ·
 [Model report](docs/model-report.md) ·
@@ -513,6 +516,7 @@ Each layer says what it is, in the app and in this README:
 
 ## Credits and data
 
+- **Team HumanSlop**: Varun Rao and Galaba Vamsi.
 - **Dataset**: Z-Alizadeh Sani et al., *Extension of Z-Alizadeh Sani Dataset*, UCI Machine Learning Repository (also
   on Kaggle): 303 patients; targets overall CAD and LAD, LCX and RCA stenosis.
 - **3D heart model**: ["Realistic Human Heart"](https://sketchfab.com/3d-models/realistic-human-heart-3f8072336ce94d18b3d0d055a1ece089)

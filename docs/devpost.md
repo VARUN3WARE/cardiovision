@@ -1,7 +1,8 @@
 # Devpost submission text: CardioVision
 
-Paste each section into the matching Devpost field. Links to add: GitHub repository, YouTube demo
-(unlisted), and the PDF `docs/CardioVision-Technical-Documentation.pdf`.
+Paste each section into the matching Devpost field. Team HumanSlop: Varun Rao and Galaba Vamsi.
+Links: GitHub https://github.com/VARUN3WARE/cardiovision · demo video https://youtu.be/Gk6_mYgvZAc · PDF
+https://github.com/VARUN3WARE/cardiovision/blob/main/docs/CardioVision-Technical-Documentation.pdf
 
 **Tagline (≤ 200 characters):** Predicts coronary artery disease and LAD/LCX/RCA stenosis from routine
 clinical data, maps each risk onto its artery on a 3D heart that beats like the patient's, and explains every
@@ -159,7 +160,7 @@ meshoptimizer · gltf-transform · bodyparts3d
 
 ## Credits
 
-Dataset: Extension of Z-Alizadeh Sani dataset, UCI Machine Learning Repository. 3D heart model: "Realistic
+Team HumanSlop: Varun Rao and Galaba Vamsi. Dataset: Extension of Z-Alizadeh Sani dataset, UCI Machine Learning Repository. 3D heart model: "Realistic
 Human Heart" by neshallads (Sketchfab), CC BY 4.0. Atlas heart and chest: BodyParts3D, © The Database Center
 for Life Science, CC BY 4.0. Lab physiology: published sources cited in the code (Gould 1974 and 1980, Pijls
 1993, Nesto & Kowalchuk 1987, among others).
